@@ -257,6 +257,9 @@ class database_api
       string get_auth_token( string account, string authtype)const;
       vector<account_auth_api_obj> get_auth_token_list( uint64_t from, uint32_t limit )const;
 
+
+      map<uint32_t, applied_operation> get_operation_list( uint64_t from, uint32_t limit )const;
+
    private:
       std::shared_ptr< database_api_impl >   my;
 };
@@ -324,5 +327,6 @@ FC_API(sigmaengine::app::database_api,
    (get_savings_withdraw_to)
    (get_fund_withdraw_from)
    (get_fund_withdraw_list)
-   
+
+   (get_operation_list)
 )

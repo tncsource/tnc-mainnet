@@ -2,7 +2,7 @@
 
 #include <sigmaengine/protocol/hardfork.hpp>
 
-#define SIGMAENGINE_VERSION                                         ( version(0, 1, 0) )
+#define SIGMAENGINE_VERSION                                         ( version(0, 1, 134) )
 
 #define SIGMAENGINE_BLOCKCHAIN_VERSION                              ( version(0, 1, 0) )
 #define SIGMAENGINE_BLOCKCHAIN_HARDFORK_VERSION                     ( hardfork_version( SIGMAENGINE_BLOCKCHAIN_VERSION ) )

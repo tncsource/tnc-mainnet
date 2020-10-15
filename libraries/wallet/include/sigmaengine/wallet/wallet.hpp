@@ -580,6 +580,8 @@ class wallet_api
       
       vector< operation > get_history_by_opname( string account, string op_name )const; 
 
+      map<uint32_t,applied_operation> get_operation_list( uint32_t from, uint32_t limit );
+
       std::map<string,std::function<string(fc::variant,const fc::variants&)>> get_result_formatters() const;
 
       fc::signal<void(bool)> lock_changed;
@@ -1253,5 +1255,7 @@ FC_API( sigmaengine::wallet::wallet_api,
         ( get_join_dapps )
         ( get_dapp_votes )
         ( get_dapp_history )
+        
+        ( get_operation_list )
       )
 FC_REFLECT( sigmaengine::wallet::memo_data, (from)(to)(nonce)(check)(encrypted) )

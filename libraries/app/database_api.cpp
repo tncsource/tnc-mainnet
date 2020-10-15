@@ -204,7 +204,7 @@ vector<applied_operation> database_api::get_ops_in_block(uint32_t block_num, boo
 
 vector<applied_operation> database_api_impl::get_ops_in_block(uint32_t block_num, bool only_virtual)const
 {
-   const auto& idx = _db.get_index< operation_index >().indices().get< by_location >();
+   const auto& idx = _db.get_index< operation_index >().indices().get< by_location >();   
    auto itr = idx.lower_bound( block_num );
    vector<applied_operation> result;
    applied_operation temp;
@@ -215,6 +215,8 @@ vector<applied_operation> database_api_impl::get_ops_in_block(uint32_t block_num
          result.push_back(temp);
       ++itr;
    }
+   
+   
    return result;
 }
 
@@ -871,6 +873,51 @@ u256 to256( const fc::uint128& t )
    return result;
 }
 
+map< uint32_t, applied_operation > database_api::get_operation_list( uint64_t from, uint32_t limit )const
+{
+   return my->_db.with_read_lock( [&]()
+   {
+      FC_ASSERT( limit <= 10000, "Limit of ${l} is greater than maxmimum allowed", ("l",limit) );
+      //FC_ASSERT( from >= 0, "From must be greater than -1" );
+
+      const auto& idx = my->_db.get_index< operation_index >().indices().get< by_location >();
+      
+      auto itr = idx.begin();
+      auto end = idx.end();
+
+      uint32_t max = idx.size();
+      //ilog("get_opeartion_list size ${s}",("s",max));
+
+      uint32_t start = max - limit;
+      if ( from < my->_db.head_block_num() )
+      {
+         start = from;
+      }
+
+      uint32_t index = 0;
+      while( itr != end && start-- )
+      {
+         ++itr;
+         index++;
+      }
+
+      map<uint32_t, applied_operation> result;
+      applied_operation temp;
+      
+      while( itr != end && limit-- )
+      {
+         //ilog(" itr opeartion is ${b} ${op}",("b", itr->block)("op",itr->trx_id));
+
+         temp = *itr;
+         result[index] = temp;
+         ++itr;
+         index++;
+      }
+      
+      return result;
+   });
+}
+
 map< uint32_t, applied_operation > database_api::get_account_history( string account, uint64_t from, uint32_t limit )const
 {
    return my->_db.with_read_lock( [&]()
@@ -949,6 +996,7 @@ annotated_signed_transaction database_api::get_transaction( transaction_id_type 
          result.transaction_num = itr->trx_in_block;
          return result;
       }
+      
       FC_ASSERT( false, "Unknown Transaction ${t}", ("t",id));
    });
 #endif

@@ -2636,6 +2636,10 @@ annotated_signed_transaction wallet_api::transfer(string from, string to, asset 
    return my->sign_transaction( tx, broadcast );
 } FC_CAPTURE_AND_RETHROW( (from)(to)(amount)(memo)(broadcast) ) }
 
+map<uint32_t,applied_operation> wallet_api::get_operation_list( uint32_t from, uint32_t limit ) {
+   return my->_remote_db->get_operation_list(from,limit);
+}
+
 string wallet_api::decrypt_memo( string encrypted_memo ) {
    if( is_locked() ) return encrypted_memo;
 
