@@ -14,6 +14,7 @@ namespace sigmaengine { namespace protocol {
             account_create_operation,
             account_update_operation,
             custom_operation,
+            custom_operation,
             custom_json_operation,
             request_account_recovery_operation,
             recover_account_operation,
@@ -22,6 +23,8 @@ namespace sigmaengine { namespace protocol {
             decline_voting_rights_operation,
             reset_account_operation,
             set_reset_account_operation,        
+            custom_operation,
+            custom_operation,
             account_auth_operation,
             
             print_operation,

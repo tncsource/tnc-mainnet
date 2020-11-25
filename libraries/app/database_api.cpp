@@ -873,6 +873,42 @@ u256 to256( const fc::uint128& t )
    return result;
 }
 
+map< uint32_t, account_balance_api_obj > database_api::get_balance_rank( uint64_t from, uint32_t limit )const
+{
+   return my->_db.with_read_lock( [&]()
+   {
+      FC_ASSERT( limit <= 10000, "Limit of ${l} is greater than maxmimum allowed", ("l",limit) );
+
+      const auto& idx = my->_db.get_index< account_index >().indices().get< by_balance >();
+
+      auto itr = idx.begin();
+      auto end = idx.end();
+
+      uint32_t index = 0;
+      if ( from > 0 )
+      {
+         while( itr != end && from-- )
+         {
+            ++itr;
+            index++;
+         }
+      }
+
+      map<uint32_t, account_balance_api_obj> result;
+      account_balance_api_obj temp;
+
+      while( itr != end && limit-- )
+      {
+         temp = account_balance_api_obj(itr->name, itr->balance);
+         result[index] = temp;
+         ++itr;
+         index++;
+      }
+      
+      return result;
+   });
+}
+
 map< uint32_t, applied_operation > database_api::get_operation_list( uint64_t from, uint32_t limit )const
 {
    return my->_db.with_read_lock( [&]()

@@ -93,6 +93,7 @@ class wallet_api
 {
    public:
       wallet_api( const wallet_data& initial_data, fc::api<login_api> rapi );
+      wallet_api( const wallet_data& initial_data );
       virtual ~wallet_api();
 
       bool copy_wallet_file( string destination_filename );
@@ -265,6 +266,8 @@ class wallet_api
        * @returns true if the specified wallet is loaded
        */
       bool    load_wallet_file(string wallet_filename = "");
+
+      void    set_wallet_info( wallet_data wdata );
 
       /** Saves the current wallet to the given filename.
        *
@@ -495,6 +498,13 @@ class wallet_api
       annotated_signed_transaction print(string account, asset amount, bool broadcast );
       annotated_signed_transaction burn(string account, asset amount, bool broadcast );
 
+      offline_transaction transfer_offline(string from, string to, asset amount, string memo);
+      offline_transaction get_sign_publickey(offline_transaction tx);
+      signed_transaction offline_signature(offline_transaction tx);
+      signed_transaction sign_offline_transaction(offline_transaction tx );
+      annotated_signed_transaction fill_transaction( signed_transaction tx, bool broadcast );
+      annotated_signed_transaction push_transaction(signed_transaction tx, bool broadcast );
+
       /** Signs a transaction.
        *
        * Given a fully-formed transaction that is only lacking signatures, this signs
@@ -581,6 +591,7 @@ class wallet_api
       vector< operation > get_history_by_opname( string account, string op_name )const; 
 
       map<uint32_t,applied_operation> get_operation_list( uint32_t from, uint32_t limit );
+      map<uint32_t,account_balance_api_obj> get_balance_rank( uint32_t from, uint32_t limit );
 
       std::map<string,std::function<string(fc::variant,const fc::variants&)>> get_result_formatters() const;
 
@@ -1136,7 +1147,7 @@ FC_API( sigmaengine::wallet::wallet_api,
         /// wallet api
         (help)(gethelp)
         (about)(is_new)(is_locked)(lock)(unlock)(set_password)
-        (load_wallet_file)(save_wallet_file)
+        (load_wallet_file)(set_wallet_info)(save_wallet_file)
 
         /// key api
         (import_key)
@@ -1182,6 +1193,15 @@ FC_API( sigmaengine::wallet::wallet_api,
         (get_prototype_operation)
         (serialize_transaction)
         (sign_transaction)
+
+        // offline wallet
+        (transfer_offline)
+        (get_sign_publickey)
+        (sign_offline_transaction)
+        (offline_signature)
+        (push_transaction)
+        (fill_transaction)
+
 
         (network_add_nodes)
         (network_get_connected_peers)
@@ -1257,5 +1277,6 @@ FC_API( sigmaengine::wallet::wallet_api,
         ( get_dapp_history )
         
         ( get_operation_list )
+        ( get_balance_rank )
       )
 FC_REFLECT( sigmaengine::wallet::memo_data, (from)(to)(nonce)(check)(encrypted) )

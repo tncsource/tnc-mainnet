@@ -91,6 +91,14 @@ namespace sigmaengine { namespace protocol {
       void clear() { operations.clear(); signatures.clear(); }
    };
 
+   struct offline_transaction : public signed_transaction {
+      offline_transaction(){}
+      offline_transaction( const signed_transaction& trx )
+      :signed_transaction(trx){}
+      
+      flat_set<public_key_type>   pkeys;     
+   };
+
    void verify_authority( const vector<operation>& ops, const flat_set<public_key_type>& sigs,
                           const authority_getter& get_active,
                           const authority_getter& get_owner,
@@ -117,3 +125,5 @@ namespace sigmaengine { namespace protocol {
 FC_REFLECT( sigmaengine::protocol::transaction, (ref_block_num)(ref_block_prefix)(expiration)(operations)(extensions) )
 FC_REFLECT_DERIVED( sigmaengine::protocol::signed_transaction, (sigmaengine::protocol::transaction), (signatures) )
 FC_REFLECT_DERIVED( sigmaengine::protocol::annotated_signed_transaction, (sigmaengine::protocol::signed_transaction), (transaction_id)(block_num)(transaction_num) );
+
+FC_REFLECT_DERIVED( sigmaengine::protocol::offline_transaction, (sigmaengine::protocol::signed_transaction), (pkeys) );

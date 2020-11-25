@@ -230,6 +230,17 @@ public:
       _wallet.ws_user = initial_data.ws_user;
       _wallet.ws_password = initial_data.ws_password;
    }
+
+   wallet_api_impl( wallet_api& s, const wallet_data& initial_data )
+      : self( s )
+   {
+      init_prototype_ops();
+
+      _wallet.ws_server = initial_data.ws_server;
+      _wallet.ws_user = initial_data.ws_user;
+      _wallet.ws_password = initial_data.ws_password;
+   }
+   
    virtual ~wallet_api_impl()
    {}
 
@@ -427,8 +438,15 @@ public:
          return false;
 
       _wallet = fc::json::from_file( wallet_filename ).as< wallet_data >();
-
+      
       return true;
+   }
+
+   void set_wallet_info( wallet_data wdata )
+   {
+      _wallet.ws_server = wdata.ws_server;
+      _wallet.ws_user = wdata.ws_user;
+      _wallet.ws_password = wdata.ws_password;
    }
 
    void save_wallet_file(string wallet_filename = "")
@@ -514,6 +532,187 @@ public:
    {
       FC_ASSERT( tx_expiration_seconds < SIGMAENGINE_MAX_TIME_UNTIL_EXPIRATION );
       _tx_expiration_seconds = tx_expiration_seconds;
+   }
+
+   offline_transaction get_sign_publickey(offline_transaction tx)
+   {
+      flat_set< account_name_type >   req_active_approvals;
+      flat_set< account_name_type >   req_owner_approvals;
+      flat_set< account_name_type >   req_posting_approvals;
+      vector< authority >  other_auths;
+
+      tx.get_required_authorities( req_active_approvals, req_owner_approvals, req_posting_approvals, other_auths );
+
+      for( const auto& auth : other_auths )
+         for( const auto& a : auth.account_auths )
+            req_active_approvals.insert(a.first);
+
+      // std::merge lets us de-duplicate account_id's that occur in both
+      //   sets, and dump them into a vector (as required by remote_db api)
+      //   at the same time
+      vector< string > v_approving_account_names;
+      std::merge(req_active_approvals.begin(), req_active_approvals.end(),
+                 req_owner_approvals.begin() , req_owner_approvals.end(),
+                 std::back_inserter( v_approving_account_names ) );
+
+      for( const auto& a : req_posting_approvals )
+         v_approving_account_names.push_back(a);
+
+      /// TODO: fetch the accounts specified via other_auths as well.
+
+      auto approving_account_objects = _remote_db->get_accounts( v_approving_account_names );
+
+      /// TODO: recursively check one layer deeper in the authority tree for keys
+
+      FC_ASSERT( approving_account_objects.size() == v_approving_account_names.size(), "", ("aco.size:", approving_account_objects.size())("acn",v_approving_account_names.size()) );
+
+      flat_map< string, account_api_obj > approving_account_lut;
+      size_t i = 0;
+      for( const optional< account_api_obj >& approving_acct : approving_account_objects )
+      {
+         if( !approving_acct.valid() )
+         {
+            wlog( "operation_get_required_auths said approval of non-existing account ${name} was needed",
+                  ("name", v_approving_account_names[i]) );
+            i++;
+            continue;
+         }
+         approving_account_lut[ approving_acct->name ] =  *approving_acct;
+         i++;
+      }
+      auto get_account_from_lut = [&]( const std::string& name ) -> const account_api_obj&
+      {
+         auto it = approving_account_lut.find( name );
+         FC_ASSERT( it != approving_account_lut.end() );
+         return it->second;
+      };
+
+      flat_set<public_key_type> approving_key_set;
+
+      for( account_name_type& acct_name : req_active_approvals )
+      {
+         const auto it = approving_account_lut.find( acct_name );
+         if( it == approving_account_lut.end() )
+            continue;
+         const account_api_obj& acct = it->second;
+         vector<public_key_type> v_approving_keys = acct.active.get_keys();
+         wdump((v_approving_keys));
+         for( const public_key_type& approving_key : v_approving_keys )
+         {
+            wdump((approving_key));
+            approving_key_set.insert( approving_key );
+         }
+      }
+
+      for( account_name_type& acct_name : req_posting_approvals )
+      {
+         const auto it = approving_account_lut.find( acct_name );
+         if( it == approving_account_lut.end() )
+            continue;
+         const account_api_obj& acct = it->second;
+         vector<public_key_type> v_approving_keys = acct.posting.get_keys();
+         wdump((v_approving_keys));
+         for( const public_key_type& approving_key : v_approving_keys )
+         {
+            wdump((approving_key));
+            approving_key_set.insert( approving_key );
+         }
+      }
+
+      for( const account_name_type& acct_name : req_owner_approvals )
+      {
+         const auto it = approving_account_lut.find( acct_name );
+         if( it == approving_account_lut.end() )
+            continue;
+         const account_api_obj& acct = it->second;
+         vector<public_key_type> v_approving_keys = acct.owner.get_keys();
+         for( const public_key_type& approving_key : v_approving_keys )
+         {
+            wdump((approving_key));
+            approving_key_set.insert( approving_key );
+         }
+      }
+      for( const authority& a : other_auths )
+      {
+         for( const auto& k : a.key_auths )
+         {
+            wdump((k.first));
+            approving_key_set.insert( k.first );
+         }
+      }
+
+      auto dyn_props = _remote_db->get_dynamic_global_properties();
+      tx.set_reference_block( dyn_props.head_block_id );
+      tx.set_expiration( dyn_props.time + fc::seconds(_tx_expiration_seconds) );
+      tx.signatures.clear();
+
+/*
+      flat_set< public_key_type > available_keys;
+      flat_map< public_key_type, fc::ecc::private_key > available_private_keys;
+      for( const public_key_type& key : approving_key_set )
+      {
+         auto it = _keys.find(key);
+         if( it != _keys.end() )
+         {
+            fc::optional<fc::ecc::private_key> privkey = wif_to_key( it->second );
+            FC_ASSERT( privkey.valid(), "Malformed private key in _keys" );
+            available_keys.insert(key);
+            available_private_keys[key] = *privkey;
+         }
+      }
+*/
+
+      auto minimal_signing_keys = tx.minimize_required_signatures(
+         SIGMAENGINE_CHAIN_ID,
+         approving_key_set,
+         [&]( const string& account_name ) -> const authority&
+         { return (get_account_from_lut( account_name ).active); },
+         [&]( const string& account_name ) -> const authority&
+         { return (get_account_from_lut( account_name ).owner); },
+         [&]( const string& account_name ) -> const authority&
+         { return (get_account_from_lut( account_name ).posting); },
+         SIGMAENGINE_MAX_SIG_CHECK_DEPTH
+         );
+
+      for( const public_key_type& k : minimal_signing_keys )
+      {
+         tx.pkeys.insert(k);
+      }
+
+      return tx;
+   }
+
+   signed_transaction offline_signature(offline_transaction tx)
+   {
+      for( const public_key_type& k : tx.pkeys )
+      {
+         auto it = _keys.find(k);
+         FC_ASSERT( it != _keys.end() );
+         fc::optional<fc::ecc::private_key> privkey = wif_to_key( it->second );
+         FC_ASSERT( privkey.valid(), "Malformed private key in _keys" );
+         tx.sign( *privkey, SIGMAENGINE_CHAIN_ID );
+      }
+
+      return tx;
+   }
+
+   annotated_signed_transaction fill_transaction( signed_transaction tx, bool broadcast = false )
+   {
+      if( broadcast ) {
+         try {
+            auto result = _remote_net_broadcast->broadcast_transaction_synchronous( tx );
+            annotated_signed_transaction rtrx(tx);
+            rtrx.block_num = result.get_object()["block_num"].as_uint64();
+            rtrx.transaction_num = result.get_object()["trx_num"].as_uint64();
+            return rtrx;
+         }
+         catch (const fc::exception& e)
+         {
+            elog("Caught exception while broadcasting tx ${id}:  ${e}", ("id", tx.id().str())("e", e.to_detail_string()) );
+            throw;
+         }
+      }
+      return tx;
    }
 
    annotated_signed_transaction sign_transaction(signed_transaction tx, bool broadcast = false)
@@ -895,6 +1094,10 @@ wallet_api::wallet_api(const wallet_data& initial_data, fc::api<login_api> rapi)
    : my(new detail::wallet_api_impl(*this, initial_data, rapi))
 {}
 
+wallet_api::wallet_api(const wallet_data& initial_data)
+   : my(new detail::wallet_api_impl(*this, initial_data))
+{}
+
 wallet_api::~wallet_api(){}
 
 bool wallet_api::copy_wallet_file(string destination_filename)
@@ -904,16 +1107,20 @@ bool wallet_api::copy_wallet_file(string destination_filename)
 
 optional<signed_block_api_obj> wallet_api::get_block(uint32_t num)
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+   
    return my->_remote_db->get_block(num);
 }
 
 vector<applied_operation> wallet_api::get_ops_in_block(uint32_t block_num, bool only_virtual)
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->_remote_db->get_ops_in_block(block_num, only_virtual);
 }
 
 vector<account_api_obj> wallet_api::list_my_accounts()
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked(), "Wallet must be unlocked to list accounts" );
    vector<account_api_obj> result;
 
@@ -949,10 +1156,12 @@ vector<account_api_obj> wallet_api::list_my_accounts()
 
 set<string> wallet_api::list_accounts(const string& lowerbound, uint32_t limit)
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->_remote_db->lookup_accounts(lowerbound, limit);
 }
 
 std::vector< account_name_type > wallet_api::get_active_bobservers()const {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->_remote_db->get_active_bobservers();
 }
 
@@ -998,6 +1207,7 @@ string wallet_api::get_wallet_filename() const
 
 account_api_obj wallet_api::get_account( string account_name ) const
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->get_account( account_name );
 }
 
@@ -1043,16 +1253,21 @@ string wallet_api::normalize_brain_key(string s) const
 
 variant wallet_api::info()
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+   
    return my->info();
 }
 
 variant_object wallet_api::about() const
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+   
     return my->about();
 }
 
 annotated_signed_transaction wallet_api::print(string account, asset amount, bool broadcast )
 { try {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
     print_operation op;
 #ifndef IS_TEST_NET
@@ -1070,6 +1285,7 @@ annotated_signed_transaction wallet_api::print(string account, asset amount, boo
 
 annotated_signed_transaction wallet_api::burn(string account, asset amount, bool broadcast )
 { try {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
     burn_operation op;
 #ifndef IS_TEST_NET
@@ -1088,6 +1304,7 @@ annotated_signed_transaction wallet_api::burn(string account, asset amount, bool
 annotated_signed_transaction wallet_api::create_token( string dapp_name, string creator, string token_name, string symbol, int64_t init_supply, bool broadcast )
 {
    try {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       create_token_operation op;
@@ -1118,6 +1335,7 @@ annotated_signed_transaction wallet_api::create_token( string dapp_name, string 
 annotated_signed_transaction wallet_api::issue_token( string token_name, string token_publisher, asset amount, bool broadcast )
 {
    try {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       issue_token_operation op;
@@ -1147,6 +1365,7 @@ annotated_signed_transaction wallet_api::issue_token( string token_name, string 
 
 optional<token_api_object> wallet_api::get_token( string name )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_token_api();
 
@@ -1156,6 +1375,7 @@ optional<token_api_object> wallet_api::get_token( string name )
 
 vector< token_balance_api_object > wallet_api::get_token_balance( string account )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_token_api();
 
@@ -1165,6 +1385,7 @@ vector< token_balance_api_object > wallet_api::get_token_balance( string account
 
 vector< token_api_object > wallet_api::list_tokens( string lower_bound_name, uint32_t limit )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_token_api();
    auto results = ( *my->_remote_token_api )->lookup_tokens( lower_bound_name, limit );
@@ -1174,6 +1395,7 @@ vector< token_api_object > wallet_api::list_tokens( string lower_bound_name, uin
 annotated_signed_transaction wallet_api::transfer_token( string from, string to, asset amount, string memo, bool broadcast )
 {
    try {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
       check_memo( memo, get_account( from ) );
 
@@ -1202,6 +1424,7 @@ annotated_signed_transaction wallet_api::transfer_token( string from, string to,
 annotated_signed_transaction wallet_api::burn_token( string account, asset amount, bool broadcast )
 {
    try {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       burn_token_operation op;
@@ -1227,19 +1450,23 @@ annotated_signed_transaction wallet_api::burn_token( string account, asset amoun
 
 variant wallet_api::fund_info(string name)
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->fund_info(name);
 }
 
 vector< fund_withdraw_api_obj > wallet_api::get_staking_fund_from( string fund_name, string account ) {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->_remote_db->get_fund_withdraw_from(fund_name, account);
 }
 
 vector< fund_withdraw_api_obj > wallet_api::get_staking_fund_list( string fund_name, uint32_t limit ) {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->_remote_db->get_fund_withdraw_list(fund_name, limit);
 }
 
 annotated_signed_transaction wallet_api::staking_fund( string from, string fund_name, uint32_t request_id, asset amount, string memo, uint8_t usertype, uint8_t month, bool broadcast )
 { try {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    check_memo( memo, get_account( from ) );
    staking_fund_operation op;
@@ -1260,6 +1487,7 @@ annotated_signed_transaction wallet_api::staking_fund( string from, string fund_
 
 annotated_signed_transaction wallet_api::transfer_fund(string from, string fund_name, asset amount, string memo, bool broadcast )
 { try {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
     check_memo( memo, get_account( from ) );
     transfer_fund_operation op;
@@ -1277,6 +1505,7 @@ annotated_signed_transaction wallet_api::transfer_fund(string from, string fund_
 
 annotated_signed_transaction wallet_api::return_staking_fund(string fund_name, uint32_t request_id, string to, bool broadcast )
 { try {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
     FC_ASSERT( !is_locked() );
    
     return_staking_fund_operation op;
@@ -1294,6 +1523,7 @@ annotated_signed_transaction wallet_api::return_staking_fund(string fund_name, u
 
 annotated_signed_transaction wallet_api::transfer_savings( string from, uint32_t request_id, string to, asset amount, uint8_t split_pay_month, string memo, string date, bool broadcast  )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    check_memo( memo, get_account( from ) );
    transfer_savings_operation op;
@@ -1317,6 +1547,7 @@ annotated_signed_transaction wallet_api::transfer_savings( string from, uint32_t
 
 annotated_signed_transaction wallet_api::cancel_transfer_savings( string from, string to, asset amount, uint32_t request_id, bool broadcast  )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    cancel_transfer_savings_operation op;
 
@@ -1335,6 +1566,7 @@ annotated_signed_transaction wallet_api::cancel_transfer_savings( string from, s
 
 annotated_signed_transaction wallet_api::conclusion_transfer_savings( string from, string to, uint32_t request_id, bool broadcast  )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    conclusion_transfer_savings_operation op;
 
@@ -1350,15 +1582,18 @@ annotated_signed_transaction wallet_api::conclusion_transfer_savings( string fro
 }
 
 vector< savings_withdraw_api_obj > wallet_api::get_transfer_savings_to( string account ) {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->_remote_db->get_savings_withdraw_to(account);
 }
 
 vector< savings_withdraw_api_obj > wallet_api::get_transfer_savings_from( string account ) {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->_remote_db->get_savings_withdraw_from(account);
 }
 
 annotated_signed_transaction wallet_api::set_fund_interest(string fund_name, uint8_t usertype, uint8_t month, string percent_interest, bool broadcast )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
     FC_ASSERT( !is_locked() );
    
     set_fund_interest_operation op;
@@ -1377,6 +1612,7 @@ annotated_signed_transaction wallet_api::set_fund_interest(string fund_name, uin
 
 vector< token_balance_api_object > wallet_api::get_accounts_by_token( string token_name )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_token_api();
    auto results = ( *my->_remote_token_api )->get_accounts_by_token( token_name );
@@ -1385,6 +1621,7 @@ vector< token_balance_api_object > wallet_api::get_accounts_by_token( string tok
 
 vector< token_api_object > wallet_api::get_tokens_by_dapp( string dapp_name )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_token_api();
    auto results = ( *my->_remote_token_api )->get_tokens_by_dapp( dapp_name );
@@ -1394,6 +1631,7 @@ vector< token_api_object > wallet_api::get_tokens_by_dapp( string dapp_name )
 annotated_signed_transaction wallet_api::set_token_staking_interest( string publisher, string token, uint8_t months, string interest_rate, bool broadcast )
 {
    try {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       set_token_staking_interest_operation op;
@@ -1421,6 +1659,7 @@ annotated_signed_transaction wallet_api::set_token_staking_interest( string publ
 annotated_signed_transaction wallet_api::setup_token_fund( string publisher, string token, string fund_name, asset init_fund_balance, bool broadcast )
 {
    try {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       setup_token_fund_operation op;
@@ -1448,6 +1687,7 @@ annotated_signed_transaction wallet_api::setup_token_fund( string publisher, str
 annotated_signed_transaction wallet_api::transfer_token_fund( string from, string token, string fund_name, asset amount, string memo, bool broadcast )
 {
    try {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       transfer_token_fund_operation op;
@@ -1476,6 +1716,7 @@ annotated_signed_transaction wallet_api::transfer_token_fund( string from, strin
 annotated_signed_transaction wallet_api::staking_token_fund( string from, string token, string fund_name, uint32_t request_id, asset amount, string memo, uint8_t months, bool broadcast )
 {
    try {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       staking_token_fund_operation op;
@@ -1504,6 +1745,7 @@ annotated_signed_transaction wallet_api::staking_token_fund( string from, string
 }
 
 vector< token_fund_withdraw_api_obj > wallet_api::get_token_staking_list( string account, string token ){
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_token_api();
    auto results = ( *my->_remote_token_api )->get_token_staking_list( account, token );
@@ -1512,6 +1754,7 @@ vector< token_fund_withdraw_api_obj > wallet_api::get_token_staking_list( string
 
 vector< token_fund_withdraw_api_obj > wallet_api::list_token_fund_withdraw ( string token, string fund, string account, int req_id, uint32_t limit)
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_token_api();
    auto results = ( *my->_remote_token_api )->lookup_token_fund_withdraw( token, fund, account, req_id, limit );
@@ -1520,6 +1763,7 @@ vector< token_fund_withdraw_api_obj > wallet_api::list_token_fund_withdraw ( str
 
 optional< token_fund_api_obj > wallet_api::get_token_fund( string token, string fund )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_token_api();
    auto results = ( *my->_remote_token_api )->get_token_fund( token, fund );
@@ -1528,6 +1772,7 @@ optional< token_fund_api_obj > wallet_api::get_token_fund( string token, string 
 
 vector< token_staking_interest_api_obj > wallet_api::get_token_staking_interest( string token )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_token_api();
    auto results = ( *my->_remote_token_api )->get_token_staking_interest( token );
@@ -1538,6 +1783,7 @@ annotated_signed_transaction wallet_api::transfer_token_savings( string from, st
          , asset amount, uint8_t split_pay_month, string memo, string next_date, bool broadcast )
 {
    try {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       transfer_token_savings_operation op;
@@ -1569,6 +1815,7 @@ annotated_signed_transaction wallet_api::transfer_token_savings( string from, st
 annotated_signed_transaction wallet_api::cancel_transfer_token_savings( string token, string from, string to, uint32_t request_id, bool broadcast )
 {
    try {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       cancel_transfer_token_savings_operation op;
@@ -1596,6 +1843,7 @@ annotated_signed_transaction wallet_api::cancel_transfer_token_savings( string t
 annotated_signed_transaction wallet_api::conclude_transfer_token_savings( string token, string from, string to, uint32_t request_id, bool broadcast )
 {
    try {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       conclude_transfer_token_savings_operation op;
@@ -1622,6 +1870,7 @@ annotated_signed_transaction wallet_api::conclude_transfer_token_savings( string
 
 vector< token_savings_withdraw_api_obj > wallet_api::get_token_savings_withdraw_from( string token, string from )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_token_api();
    auto results = ( *my->_remote_token_api )->get_token_savings_withdraw_from( token, from );
@@ -1630,6 +1879,7 @@ vector< token_savings_withdraw_api_obj > wallet_api::get_token_savings_withdraw_
 
 vector< token_savings_withdraw_api_obj > wallet_api::get_token_savings_withdraw_to( string token, string to )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_token_api();
    auto results = ( *my->_remote_token_api )->get_token_savings_withdraw_to( token, to );
@@ -1638,6 +1888,7 @@ vector< token_savings_withdraw_api_obj > wallet_api::get_token_savings_withdraw_
 
 vector< token_savings_withdraw_api_obj > wallet_api::list_token_savings_withdraw( string token, string from, string to, int req_id, int limit )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_token_api();
    auto results = ( *my->_remote_token_api )->lookup_token_savings_withdraw( token, from, to, req_id, limit );
@@ -1648,6 +1899,7 @@ creating_dapp_result wallet_api::create_dapp ( string owner, string name, bool b
 {
    try
    {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       auto dapp_key = suggest_brain_key();
@@ -1682,6 +1934,7 @@ creating_dapp_result wallet_api::reissue_dapp_key ( string owner, string name, b
 {
    try
    {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       auto dapp_key = suggest_brain_key();
@@ -1713,6 +1966,7 @@ creating_dapp_result wallet_api::reissue_dapp_key ( string owner, string name, b
 
 vector< dapp_api_object > wallet_api::list_dapps( string lower_bound_name, uint32_t limit )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_dapp_api();
    auto results = (*my->_remote_dapp_api)->lookup_dapps( lower_bound_name, limit );
@@ -1721,6 +1975,7 @@ vector< dapp_api_object > wallet_api::list_dapps( string lower_bound_name, uint3
 
 optional< dapp_api_object > wallet_api::get_dapp( string dapp_name )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_dapp_api();
    auto result = ( *my->_remote_dapp_api )->get_dapp( dapp_name );
@@ -1729,6 +1984,7 @@ optional< dapp_api_object > wallet_api::get_dapp( string dapp_name )
 
 vector< dapp_api_object > wallet_api::get_dapps_by_owner( string owner )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_dapp_api();
    auto results = (*my->_remote_dapp_api)->get_dapps_by_owner( owner );
@@ -1738,6 +1994,7 @@ vector< dapp_api_object > wallet_api::get_dapps_by_owner( string owner )
 annotated_signed_transaction wallet_api::post_dapp_comment( string dapp_name, string author, string permlink, string parent_author, string parent_permlink, string title, string body, string json, bool broadcast )
 {
    try {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
       comment_dapp_operation op;
       op.dapp_name = dapp_name;
@@ -1768,6 +2025,7 @@ annotated_signed_transaction wallet_api::vote_dapp_comment( string dapp_name, st
 {
    try 
    {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       comment_vote_dapp_operation op;
@@ -1797,6 +2055,7 @@ annotated_signed_transaction wallet_api::delete_dapp_comment( string dapp_name, 
 {
    try 
    {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       delete_comment_dapp_operation op;
@@ -1822,6 +2081,7 @@ annotated_signed_transaction wallet_api::delete_dapp_comment( string dapp_name, 
 
 optional< dapp_discussion > wallet_api::get_dapp_content( string dapp_name, string author, string permlink )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_dapp_api();
    auto results = (*my->_remote_dapp_api)->get_dapp_content( dapp_name, author, permlink );
@@ -1830,6 +2090,7 @@ optional< dapp_discussion > wallet_api::get_dapp_content( string dapp_name, stri
 
 vector< dapp_discussion > wallet_api::get_dapp_content_replies( string dapp_name, string author, string permlink )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_dapp_api();
    auto results = (*my->_remote_dapp_api)->get_dapp_content_replies( dapp_name, author, permlink );
@@ -1838,6 +2099,7 @@ vector< dapp_discussion > wallet_api::get_dapp_content_replies( string dapp_name
 
 vector< dapp_discussion > wallet_api::list_dapp_contents( string dapp_name, string last_author, string last_permlink, uint32_t limit )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_dapp_api();
    auto results = (*my->_remote_dapp_api)->lookup_dapp_contents( dapp_name, last_author, last_permlink, limit );
@@ -1848,6 +2110,7 @@ annotated_signed_transaction wallet_api::join_dapp ( string dapp_name, string ac
 {
    try
    {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       join_dapp_operation operation;
@@ -1874,6 +2137,7 @@ annotated_signed_transaction wallet_api::leave_dapp ( string dapp_name, string a
 {
    try
    {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       leave_dapp_operation operation;
@@ -1899,6 +2163,7 @@ annotated_signed_transaction wallet_api::leave_dapp ( string dapp_name, string a
 annotated_signed_transaction wallet_api::vote_dapp ( string voter, string dapp_name, uint8_t vote_type, bool broadcast ){
    try
    {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       vote_dapp_operation operation;
@@ -1925,6 +2190,7 @@ annotated_signed_transaction wallet_api::vote_dapp ( string voter, string dapp_n
 annotated_signed_transaction wallet_api::vote_dapp_transaction_fee ( string voter, asset fee, bool broadcast ){
    try
    {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       vote_dapp_trx_fee_operation operation;
@@ -1949,6 +2215,7 @@ annotated_signed_transaction wallet_api::vote_dapp_transaction_fee ( string vote
 
 vector< dapp_user_api_object > wallet_api::list_dapp_users( string dapp_name, string lower_bound_name, uint32_t limit )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_dapp_api();
    auto results = (*my->_remote_dapp_api)->lookup_dapp_users( dapp_name, lower_bound_name, limit );
@@ -1957,6 +2224,7 @@ vector< dapp_user_api_object > wallet_api::list_dapp_users( string dapp_name, st
 
 vector< dapp_user_api_object > wallet_api::get_join_dapps( string account_name )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_dapp_api();
    auto results = (*my->_remote_dapp_api)->get_join_dapps( account_name );
@@ -1964,6 +2232,7 @@ vector< dapp_user_api_object > wallet_api::get_join_dapps( string account_name )
 }
 
 vector< dapp_vote_api_object > wallet_api::get_dapp_votes( string dapp_name ) {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_dapp_api();
    auto results = (*my->_remote_dapp_api)->get_dapp_votes( dapp_name );
@@ -1971,6 +2240,7 @@ vector< dapp_vote_api_object > wallet_api::get_dapp_votes( string dapp_name ) {
 }
 
 map< uint32_t, applied_operation > wallet_api::get_dapp_history( string dapp_name, uint64_t from, uint32_t limit ) {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    my->use_dapp_history_api();
    auto result = (*my->_remote_dapp_history_api)->get_dapp_history(dapp_name, from, limit);
@@ -2026,23 +2296,53 @@ fc::ecc::private_key wallet_api::derive_private_key(const std::string& prefix_st
 
 set<account_name_type> wallet_api::list_bobservers(const string& lowerbound, uint32_t limit)
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->_remote_db->lookup_bobserver_accounts(lowerbound, limit);
 }
 
 vector< bproducer_api_obj > wallet_api::list_bproducers()
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->_remote_db->lookup_bproducer_accounts();
 }
 
 optional< bobserver_api_obj > wallet_api::get_bobserver(string owner_account)
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->get_bobserver(owner_account);
 }
 
 void wallet_api::set_wallet_filename(string wallet_filename) { my->_wallet_filename = wallet_filename; }
 
+signed_transaction wallet_api::offline_signature(offline_transaction tx)
+{ try {
+
+   FC_ASSERT( !is_locked() );
+   
+   return my->offline_signature(tx);
+} FC_CAPTURE_AND_RETHROW( (tx) ) }
+
+offline_transaction wallet_api::get_sign_publickey(offline_transaction tx)
+{ try {
+
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+   FC_ASSERT( !is_locked() );
+   
+   return my->get_sign_publickey( tx);
+} FC_CAPTURE_AND_RETHROW( (tx) ) }
+
+annotated_signed_transaction wallet_api::fill_transaction( signed_transaction tx, bool broadcast )
+{ try {
+
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+   FC_ASSERT( !is_locked() );
+   
+   return my->fill_transaction(tx, broadcast);
+} FC_CAPTURE_AND_RETHROW( (tx) ) }
+
 annotated_signed_transaction wallet_api::sign_transaction(signed_transaction tx, bool broadcast /* = false */)
 { try {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->sign_transaction( tx, broadcast);
 } FC_CAPTURE_AND_RETHROW( (tx) ) }
 
@@ -2051,10 +2351,14 @@ operation wallet_api::get_prototype_operation(string operation_name) {
 }
 
 void wallet_api::network_add_nodes( const vector<string>& nodes ) {
+
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    my->network_add_nodes( nodes );
 }
 
 vector< variant > wallet_api::network_get_connected_peers() {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+   
    return my->network_get_connected_peers();
 }
 
@@ -2094,6 +2398,11 @@ string wallet_api::gethelp(const string& method)const
 bool wallet_api::load_wallet_file( string wallet_filename )
 {
    return my->load_wallet_file( wallet_filename );
+}
+
+void wallet_api::set_wallet_info( wallet_data wdata )
+{
+   my->set_wallet_info(wdata);
 }
 
 void wallet_api::save_wallet_file( string wallet_filename )
@@ -2185,6 +2494,7 @@ annotated_signed_transaction wallet_api::create_account_with_keys( string creato
                                       public_key_type memo,
                                       bool broadcast )const
 { try {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    account_create_operation op;
    op.creator = creator;
@@ -2204,6 +2514,7 @@ annotated_signed_transaction wallet_api::create_account_with_keys( string creato
 
 annotated_signed_transaction wallet_api::request_account_recovery( string recovery_account, string account_to_recover, authority new_authority, bool broadcast )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    request_account_recovery_operation op;
    op.recovery_account = recovery_account;
@@ -2218,6 +2529,8 @@ annotated_signed_transaction wallet_api::request_account_recovery( string recove
 }
 
 annotated_signed_transaction wallet_api::recover_account( string account_to_recover, authority recent_authority, authority new_authority, bool broadcast ) {
+
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
 
    recover_account_operation op;
@@ -2233,6 +2546,8 @@ annotated_signed_transaction wallet_api::recover_account( string account_to_reco
 }
 
 annotated_signed_transaction wallet_api::change_recovery_account( string owner, string new_recovery_account, bool broadcast ) {
+
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
 
    change_recovery_account_operation op;
@@ -2248,6 +2563,7 @@ annotated_signed_transaction wallet_api::change_recovery_account( string owner, 
 
 vector< owner_authority_history_api_obj > wallet_api::get_owner_history( string account )const
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->_remote_db->get_owner_history( account );
 }
 
@@ -2262,6 +2578,7 @@ annotated_signed_transaction wallet_api::update_account(
 {
    try
    {
+      FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
       FC_ASSERT( !is_locked() );
 
       account_update_operation op;
@@ -2283,6 +2600,7 @@ annotated_signed_transaction wallet_api::update_account(
 
 annotated_signed_transaction wallet_api::update_account_auth_key( string account_name, authority_type type, public_key_type key, weight_type weight, bool broadcast )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
 
    auto accounts = my->_remote_db->get_accounts( { account_name } );
@@ -2350,6 +2668,7 @@ annotated_signed_transaction wallet_api::update_account_auth_key( string account
 
 annotated_signed_transaction wallet_api::update_account_auth_account( string account_name, authority_type type, string auth_account, weight_type weight, bool broadcast )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
 
    auto accounts = my->_remote_db->get_accounts( { account_name } );
@@ -2417,6 +2736,7 @@ annotated_signed_transaction wallet_api::update_account_auth_account( string acc
 
 annotated_signed_transaction wallet_api::update_account_auth_threshold( string account_name, authority_type type, uint32_t threshold, bool broadcast )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
 
    auto accounts = my->_remote_db->get_accounts( { account_name } );
@@ -2478,6 +2798,7 @@ annotated_signed_transaction wallet_api::update_account_auth_threshold( string a
 
 annotated_signed_transaction wallet_api::update_account_meta( string account_name, string json_meta, bool broadcast )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
 
    auto accounts = my->_remote_db->get_accounts( { account_name } );
@@ -2498,6 +2819,7 @@ annotated_signed_transaction wallet_api::update_account_meta( string account_nam
 
 annotated_signed_transaction wallet_api::update_account_memo_key( string account_name, public_key_type key, bool broadcast )
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
 
    auto accounts = my->_remote_db->get_accounts( { account_name } );
@@ -2522,6 +2844,7 @@ annotated_signed_transaction wallet_api::update_account_memo_key( string account
  */
 annotated_signed_transaction wallet_api::create_account( string creator, string new_account_name, string json_meta, bool broadcast )
 { try {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    auto owner = suggest_brain_key();
    auto active = suggest_brain_key();
@@ -2536,6 +2859,8 @@ annotated_signed_transaction wallet_api::create_account( string creator, string 
 
 void wallet_api::check_memo( const string& memo, const account_api_obj& account )const
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+   
    vector< public_key_type > keys;
 
    try
@@ -2592,6 +2917,8 @@ void wallet_api::check_memo( const string& memo, const account_api_obj& account 
 
 string wallet_api::get_encrypted_memo( string from, string to, string memo ) {
 
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+
     if( memo.size() > 0 && memo[0] == '#' ) {
        memo_data m;
 
@@ -2620,6 +2947,7 @@ string wallet_api::get_encrypted_memo( string from, string to, string memo ) {
 
 annotated_signed_transaction wallet_api::transfer(string from, string to, asset amount, string memo, bool broadcast )
 { try {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
     check_memo( memo, get_account( from ) );
     transfer_operation op;
@@ -2636,8 +2964,49 @@ annotated_signed_transaction wallet_api::transfer(string from, string to, asset 
    return my->sign_transaction( tx, broadcast );
 } FC_CAPTURE_AND_RETHROW( (from)(to)(amount)(memo)(broadcast) ) }
 
+annotated_signed_transaction wallet_api::push_transaction(signed_transaction tx, bool broadcast )
+{ try {
+   FC_ASSERT( !is_locked() );
+
+   return my->fill_transaction( tx, broadcast );
+} FC_CAPTURE_AND_RETHROW( (tx)(broadcast) ) }
+
+offline_transaction wallet_api::transfer_offline(string from, string to, asset amount, string memo)
+{ try {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+   FC_ASSERT( !is_locked() );
+    check_memo( memo, get_account( from ) );
+    transfer_operation op;
+    op.from = from;
+    op.to = to;
+    op.amount = amount;
+
+    op.memo = get_encrypted_memo( from, to, memo );
+
+    offline_transaction tx;
+    tx.operations.push_back( op );
+    tx.validate();
+
+   return my->get_sign_publickey( tx );
+} FC_CAPTURE_AND_RETHROW( (from)(to)(amount)(memo) ) }
+
+signed_transaction wallet_api::sign_offline_transaction(offline_transaction tx )
+{ try {
+   FC_ASSERT( !is_locked() );
+
+   return my->offline_signature( tx );
+} FC_CAPTURE_AND_RETHROW( (tx) ) }
+
 map<uint32_t,applied_operation> wallet_api::get_operation_list( uint32_t from, uint32_t limit ) {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+
    return my->_remote_db->get_operation_list(from,limit);
+}
+
+map<uint32_t,account_balance_api_obj> wallet_api::get_balance_rank( uint32_t from, uint32_t limit ) {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+   
+   return my->_remote_db->get_balance_rank(from,limit);
 }
 
 string wallet_api::decrypt_memo( string encrypted_memo ) {
@@ -2673,6 +3042,8 @@ string wallet_api::decrypt_memo( string encrypted_memo ) {
 }
 
 map<uint32_t,applied_operation> wallet_api::get_account_history( string account, uint32_t from, uint32_t limit ) {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+   
    auto result = my->_remote_db->get_account_history(account,from,limit);
    if( !is_locked() ) {
       for( auto& item : result ) {
@@ -2691,6 +3062,7 @@ map<uint32_t,applied_operation> wallet_api::get_account_history( string account,
 
 vector< operation > wallet_api::get_history_by_opname( string account, string op_name )const 
 {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->_remote_db->get_history_by_opname(account,op_name);
 }
 
@@ -2699,12 +3071,16 @@ void wallet_api::set_transaction_expiration(uint32_t seconds)
    my->set_transaction_expiration(seconds);
 }
 
-annotated_signed_transaction wallet_api::get_transaction( transaction_id_type id )const {
+annotated_signed_transaction wallet_api::get_transaction( transaction_id_type id )const 
+{
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+   
    return my->_remote_db->get_transaction( id );
 }
 
 annotated_signed_transaction wallet_api::set_auth_token( string account, string authtype, string authtoken, bool broadcast )
 { try {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    FC_ASSERT( !is_locked() );
    account_auth_operation op;
 
@@ -2720,10 +3096,12 @@ annotated_signed_transaction wallet_api::set_auth_token( string account, string 
 } FC_CAPTURE_AND_RETHROW( (account)(authtype)(authtoken) ) }
 
 string wallet_api::get_auth_token( string account, string authtype ) {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->_remote_db->get_auth_token(account,authtype);
 }
 
 vector<account_auth_api_obj> wallet_api::get_auth_token_list( uint64_t from, uint32_t limit ) {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->_remote_db->get_auth_token_list(from,limit);
 }
 

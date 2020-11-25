@@ -259,6 +259,7 @@ class database_api
 
 
       map<uint32_t, applied_operation> get_operation_list( uint64_t from, uint32_t limit )const;
+      map< uint32_t, account_balance_api_obj > get_balance_rank( uint64_t from, uint32_t limit )const;
 
    private:
       std::shared_ptr< database_api_impl >   my;
@@ -329,4 +330,5 @@ FC_API(sigmaengine::app::database_api,
    (get_fund_withdraw_list)
 
    (get_operation_list)
+   (get_balance_rank)
 )
