@@ -1,3 +1,6 @@
+/*
+   Anyone who uses this source code without permission from TNC IT GROUP is subject to legal penalty.
+*/
 
 #include <sigmaengine/chain/database.hpp>
 #include <sigmaengine/chain/bobserver_objects.hpp>
@@ -19,7 +22,7 @@ void update_bobserver_schedule4( database& db )
 
    dlog( "BP : max_voted_bobservers = ${max BP}", ( "max BP", bo_schedule_object.max_voted_bobservers ) );
 
-   const auto& bp_idx = db.get_index< bobserver_index >().indices().get< by_vote_name >();  
+   const auto& bp_idx = db.get_index< bobserver_index >().indices().get< by_is_bp >();  
    for( auto itr = bp_idx.begin(); itr != bp_idx.end(); itr++ )
    {  // except a bo/bp in miner
       if ( itr->is_excepted && itr->signing_key != public_key_type() ) 
@@ -35,7 +38,7 @@ void update_bobserver_schedule4( database& db )
          itr != bp_idx.end() && selected_bp.size() < bo_schedule_object.max_voted_bobservers;
          ++itr )
    {
-      if( itr->signing_key == public_key_type() )
+      if( itr->signing_key == public_key_type() || itr->is_bproducer == false )
          continue;
 
       selected_bp.insert( itr->id );
@@ -48,6 +51,78 @@ void update_bobserver_schedule4( database& db )
 
    flat_set< bobserver_id_type > selected_miners;
    selected_miners.reserve( bo_schedule_object.max_miner_bobservers );
+
+   const auto& bo_idx = db.get_index<bobserver_index>().indices().get<by_name>();
+   auto now_hi = uint64_t(db.head_block_time().sec_since_epoch()) << 32;
+   uint32_t sigma_num = bo_idx.size() - selected_bp.size();
+
+   vector< account_name_type > available_bobservers;
+   available_bobservers.reserve( sigma_num );
+
+   for( auto itr = bo_idx.begin(); itr != bo_idx.end(); ++itr )
+   {
+      if( itr->signing_key != public_key_type() && selected_bp.find( itr->id ) == selected_bp.end() )
+         available_bobservers.emplace_back( itr->account );
+   }
+
+   sigma_num = available_bobservers.size();
+   uint32_t max_num = std::min( (uint32_t)( SIGMAENGINE_NUM_BOBSERVERS - active_bobservers.size() ), sigma_num );
+
+   dlog( "BP : max_num = ${max}, now_hi = ${hi}, sigma_num = ${num}"
+      , ( "max", max_num )( "hi", now_hi )( "num", sigma_num ) );
+
+   dlog( "BP : BP available_bobservers = ${active}", ( "active", available_bobservers ) );
+
+   if ( sigma_num > 0 )
+   {
+      uint32_t temp_index[sigma_num];
+      for( uint32_t i = 0; i < sigma_num ; ++i )
+      {
+         temp_index[i] = i;
+      }
+
+      for( uint32_t i = 0; i < sigma_num ; ++i )
+      {
+         uint64_t k = now_hi + uint64_t(i)*2685821657736338717ULL;
+         k ^= (k >> 12);
+         k ^= (k << 25);
+         k ^= (k >> 27);
+         k *= 2685821657736338717ULL;
+
+         uint32_t jmax = sigma_num - i;
+         uint32_t j = i + k % jmax;
+
+         uint32_t temp = temp_index[i];
+         temp_index[i] = temp_index[j];
+         temp_index[j] = temp;
+      }
+
+      uint32_t index = 0;
+      while ( index < max_num )
+      {
+         int i = 0;
+         int j = temp_index[index];
+         for( auto owner_itr = available_bobservers.begin(); owner_itr!= available_bobservers.end(); ++owner_itr )
+         {
+            auto itr = bo_idx.find( *owner_itr );
+            string bo = itr->account;
+
+            if ( i == j )
+            {
+               if( selected_miners.find(itr->id) != selected_miners.end() )
+                  break;
+
+               active_bobservers.push_back( itr->account) ;
+               dlog("selected blockobserver : ${b}", ("b", bo));
+               selected_miners.insert(itr->id);
+               break;
+            }
+
+            i++;
+         }
+         index++;
+      }
+   }
 
    auto num_miners = selected_miners.size();
    auto num_timeshare = active_bobservers.size() - num_miners - num_bp;

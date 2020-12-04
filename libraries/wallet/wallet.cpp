@@ -1594,18 +1594,18 @@ vector< savings_withdraw_api_obj > wallet_api::get_transfer_savings_from( string
 annotated_signed_transaction wallet_api::set_fund_interest(string fund_name, uint8_t usertype, uint8_t month, string percent_interest, bool broadcast )
 {
    FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
-    FC_ASSERT( !is_locked() );
-   
-    set_fund_interest_operation op;
-    op.root = SIGMAENGINE_ROOT_ACCOUNT;
-    op.fund_name = fund_name;
-    op.usertype = usertype;
-    op.month = month;
-    op.percent_interest = percent_interest;
+   FC_ASSERT( !is_locked() );
 
-    signed_transaction tx;
-    tx.operations.push_back( op );
-    tx.validate();
+   set_fund_interest_operation op;
+   op.root = SIGMAENGINE_ROOT_ACCOUNT;
+   op.fund_name = fund_name;
+   op.usertype = usertype;
+   op.month = month;
+   op.percent_interest = percent_interest;
+
+   signed_transaction tx;
+   tx.operations.push_back( op );
+   tx.validate();
 
    return my->sign_transaction( tx, broadcast );
 }
@@ -2342,6 +2342,7 @@ annotated_signed_transaction wallet_api::fill_transaction( signed_transaction tx
 
 annotated_signed_transaction wallet_api::sign_transaction(signed_transaction tx, bool broadcast /* = false */)
 { try {
+
    FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
    return my->sign_transaction( tx, broadcast);
 } FC_CAPTURE_AND_RETHROW( (tx) ) }
@@ -2857,6 +2858,39 @@ annotated_signed_transaction wallet_api::create_account( string creator, string 
    return create_account_with_keys( creator, new_account_name, json_meta, owner.pub_key, active.pub_key, posting.pub_key, memo.pub_key, broadcast );
 } FC_CAPTURE_AND_RETHROW( (creator)(new_account_name)(json_meta) ) }
 
+annotated_signed_transaction wallet_api::update_bobserver( string bobserver_account_name,
+                                               string url,
+                                               public_key_type block_signing_key,
+                                               bool broadcast  )
+{
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+   FC_ASSERT( !is_locked() );
+   bobserver_update_operation op;
+   fc::optional< bobserver_api_obj > wit = my->_remote_db->get_bobserver_by_account( bobserver_account_name );
+   if( !wit.valid() )
+   {
+      op.url = url;
+   }
+   else
+   {
+      FC_ASSERT( wit->account == bobserver_account_name );
+      if( url != "" )
+         op.url = url;
+      else
+         op.url = wit->url;
+   }
+   
+   op.root = SIGMAENGINE_ROOT_ACCOUNT;
+
+   op.owner = bobserver_account_name;
+   op.block_signing_key = block_signing_key;
+   signed_transaction tx;
+   tx.operations.push_back(op);
+   tx.validate();
+
+   return my->sign_transaction( tx, broadcast );
+}
+
 void wallet_api::check_memo( const string& memo, const account_api_obj& account )const
 {
    FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
@@ -3077,6 +3111,38 @@ annotated_signed_transaction wallet_api::get_transaction( transaction_id_type id
    
    return my->_remote_db->get_transaction( id );
 }
+
+annotated_signed_transaction wallet_api::update_bproducer(string bobserver, bool approve, bool broadcast )
+{ try {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+   FC_ASSERT( !is_locked() );
+    update_bproducer_operation op;
+    op.root = SIGMAENGINE_ROOT_ACCOUNT;
+    op.bobserver = bobserver;
+    op.approve = approve;
+
+    signed_transaction tx;
+    tx.operations.push_back( op );
+    tx.validate();
+
+   return my->sign_transaction( tx, broadcast );
+} FC_CAPTURE_AND_RETHROW( (bobserver)(approve)(broadcast) ) }
+
+annotated_signed_transaction wallet_api::except_bobserver(string bobserver, bool broadcast )
+{ try {
+   FC_ASSERT(my->_wallet.ws_server != "local", "Wallet  is local mode.");
+   FC_ASSERT( !is_locked() );
+   except_bobserver_operation op;
+
+   op.root = SIGMAENGINE_ROOT_ACCOUNT;
+   op.bobserver = bobserver;
+
+   signed_transaction tx;
+   tx.operations.push_back( op );
+   tx.validate();
+
+   return my->sign_transaction( tx, broadcast );
+} FC_CAPTURE_AND_RETHROW( (bobserver)(broadcast) ) }
 
 annotated_signed_transaction wallet_api::set_auth_token( string account, string authtype, string authtoken, bool broadcast )
 { try {

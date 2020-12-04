@@ -2,14 +2,14 @@
 
 #include <sigmaengine/protocol/hardfork.hpp>
 
-#define SIGMAENGINE_VERSION                                         ( version(0, 1, 134) )
+#define SIGMAENGINE_VERSION                                         ( version(0, 1, 141) )
 
 #define SIGMAENGINE_BLOCKCHAIN_VERSION                              ( version(0, 1, 0) )
 #define SIGMAENGINE_BLOCKCHAIN_HARDFORK_VERSION                     ( hardfork_version( SIGMAENGINE_BLOCKCHAIN_VERSION ) )
 
 #define SIGMAENGINE_BLOCKCHAIN_PRECISION_DIGITS                     6
 
-#define SIGMAENGINE_INIT_PUBLIC_KEY_STR                             "TNC7SYubw9q8bc6fnHyYeDNBqkDsDM1uzaNgsG4Xn4ACJMb8jXZ3X" // 5JDCtLgDTxnQFwzJvD8acc5VeGnjzXPzEVL1sS8quwiVi4PhJm4
+#define SIGMAENGINE_INIT_PUBLIC_KEY_STR                             "TNC8AC92qZFLfzvZ5hQtL4L7ZdmbEMkj3otccobDGcSrRQjSY4fhG" // 5Kbn1PrneRnSYob5rToDmDmkZg5ZLND6ZQKYUQj7WvkAZAnup1W
 #define SIGMAENGINE_CHAIN_ID                                        (sigmaengine::protocol::chain_id_type())
 #define SGT_SYMBOL                                                  (uint64_t(SIGMAENGINE_BLOCKCHAIN_PRECISION_DIGITS) | (uint64_t('T') << 8) | (uint64_t('N') << 16) | (uint64_t('C') << 24) )///< TNC with 8 digits of precision
 #define SIGMAENGINE_ADDRESS_PREFIX                                  "TNC"

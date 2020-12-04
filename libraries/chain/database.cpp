@@ -1150,6 +1150,7 @@ void database::initialize_evaluators()
    _my->_evaluator_registry.register_evaluator< transfer_evaluator                           >();
    _my->_evaluator_registry.register_evaluator< account_create_evaluator                     >();
    _my->_evaluator_registry.register_evaluator< account_update_evaluator                     >();
+   _my->_evaluator_registry.register_evaluator< bobserver_update_evaluator                   >();
    _my->_evaluator_registry.register_evaluator< custom_evaluator                             >();
    _my->_evaluator_registry.register_evaluator< custom_binary_evaluator                      >();
    _my->_evaluator_registry.register_evaluator< custom_json_evaluator                        >();
@@ -1159,6 +1160,8 @@ void database::initialize_evaluators()
    _my->_evaluator_registry.register_evaluator< decline_voting_rights_evaluator              >();
    _my->_evaluator_registry.register_evaluator< reset_account_evaluator                      >();
    _my->_evaluator_registry.register_evaluator< set_reset_account_evaluator                  >();
+   _my->_evaluator_registry.register_evaluator< update_bproducer_evaluator                   >();
+   _my->_evaluator_registry.register_evaluator< except_bobserver_evaluator                   >();
    _my->_evaluator_registry.register_evaluator< account_auth_evaluator                       >();
    _my->_evaluator_registry.register_evaluator< print_evaluator                              >();
    _my->_evaluator_registry.register_evaluator< burn_evaluator                               >();

@@ -20,6 +20,8 @@
 # include <windows.h>
 #endif
 
+#include <fc/macros.hpp>
+
 namespace fc {
 
 struct aes_encoder::impl 
@@ -30,6 +32,7 @@ struct aes_encoder::impl
 aes_encoder::aes_encoder()
 {
   static int init = init_openssl();
+  FC_UNUSED(init);
 }
 
 aes_encoder::~aes_encoder()
@@ -70,7 +73,7 @@ uint32_t aes_encoder::encode( const char* plaintxt, uint32_t plaintext_len, char
         FC_THROW_EXCEPTION( aes_exception, "error during aes 256 cbc encryption update", 
                            ("s", ERR_error_string( ERR_get_error(), nullptr) ) );
     }
-    FC_ASSERT( ciphertext_len == plaintext_len, "", ("ciphertext_len",ciphertext_len)("plaintext_len",plaintext_len) );
+    FC_ASSERT( static_cast<uint32_t>(ciphertext_len) == plaintext_len, "", ("ciphertext_len",ciphertext_len)("plaintext_len",plaintext_len) );
     return ciphertext_len;
 }
 #if 0
@@ -98,6 +101,7 @@ struct aes_decoder::impl
 aes_decoder::aes_decoder()
   {
   static int init = init_openssl();
+  FC_UNUSED(init);
   }
 
 void aes_decoder::init( const fc::sha256& key, const fc::uint128& init_value )
@@ -137,7 +141,7 @@ uint32_t aes_decoder::decode( const char* ciphertxt, uint32_t ciphertxt_len, cha
         FC_THROW_EXCEPTION( aes_exception, "error during aes 256 cbc decryption update", 
                            ("s", ERR_error_string( ERR_get_error(), nullptr) ) );
     }
-    FC_ASSERT( ciphertxt_len == plaintext_len, "", ("ciphertxt_len",ciphertxt_len)("plaintext_len",plaintext_len) );
+    FC_ASSERT( ciphertxt_len == static_cast<uint32_t>(plaintext_len), "", ("ciphertxt_len",ciphertxt_len)("plaintext_len",plaintext_len) );
 	return plaintext_len;
 }
 #if 0
@@ -427,7 +431,9 @@ openssl_thread_config::openssl_thread_config()
 }
 openssl_thread_config::~openssl_thread_config()
 {
-  if (CRYPTO_get_id_callback() == &get_thread_id)
+  if ( CRYPTO_get_id_callback() != NULL &&
+       &get_thread_id != NULL &&
+       CRYPTO_get_id_callback() == &get_thread_id)
   {
     CRYPTO_set_id_callback(NULL);
     CRYPTO_set_locking_callback(NULL);

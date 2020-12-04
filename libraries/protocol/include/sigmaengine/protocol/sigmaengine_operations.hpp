@@ -73,6 +73,31 @@ namespace sigmaengine { namespace protocol {
    };
 
    /**
+    *  Users who wish to become a bobserver must pay a fee acceptable to
+    *  the current bobservers to apply for the position and allow voting
+    *  to begin.
+    *
+    *  If the owner isn't a bobserver they will become a bobserver.  Bobservers
+    *  are charged a fee equal to 1 weeks worth of bobserver pay which in
+    *  turn is derived from the current share supply.  The fee is
+    *  only applied if the owner is not already a bobserver.
+    *
+    *  If the block_signing_key is null then the bobserver is removed from
+    *  contention.  The network will pick the top 21 bobservers for
+    *  producing blocks.
+    */
+   struct bobserver_update_operation : public base_operation
+   {
+      account_name_type root;
+      account_name_type owner;
+      string            url;
+      public_key_type   block_signing_key;
+
+      void validate()const;
+      void get_required_active_authorities( flat_set<account_name_type>& a )const{ a.insert( root ); }
+   };
+
+   /**
     * @brief provides a generic way to add higher level protocols on top of bobserver consensus
     * @ingroup operations
     *
@@ -311,6 +336,25 @@ namespace sigmaengine { namespace protocol {
       void validate() const;
    };
 
+   struct update_bproducer_operation : public base_operation
+   {
+      account_name_type root;
+      account_name_type bobserver;
+      bool              approve = true;
+
+      void validate() const;
+      void get_required_active_authorities( flat_set<account_name_type>& a )const{ a.insert(root); }
+   };
+
+   struct except_bobserver_operation : public base_operation
+   {
+      account_name_type root;
+      account_name_type bobserver;
+
+      void validate() const;
+      void get_required_active_authorities( flat_set<account_name_type>& a )const{ a.insert(root); }
+   };
+
    struct account_auth_operation : public base_operation
    {
       account_name_type account;
@@ -464,6 +508,7 @@ FC_REFLECT( sigmaengine::protocol::account_update_operation,
             (json_metadata) )
 
 FC_REFLECT( sigmaengine::protocol::transfer_operation, (from)(to)(amount)(memo) )
+FC_REFLECT( sigmaengine::protocol::bobserver_update_operation, (root)(owner)(url)(block_signing_key) )
 FC_REFLECT( sigmaengine::protocol::custom_operation, (required_auths)(id)(data) )
 FC_REFLECT( sigmaengine::protocol::custom_json_operation, (required_auths)(required_posting_auths)(id)(json) )
 FC_REFLECT( sigmaengine::protocol::custom_json_dapp_operation, (required_owner_auths)(required_active_auths)(required_posting_auths)(required_auths)(id)(json) )
@@ -472,6 +517,8 @@ FC_REFLECT( sigmaengine::protocol::request_account_recovery_operation, (recovery
 FC_REFLECT( sigmaengine::protocol::recover_account_operation, (account_to_recover)(new_owner_authority)(recent_owner_authority)(extensions) );
 FC_REFLECT( sigmaengine::protocol::change_recovery_account_operation, (account_to_recover)(new_recovery_account)(extensions) );
 FC_REFLECT( sigmaengine::protocol::decline_voting_rights_operation, (account)(decline) );
+FC_REFLECT( sigmaengine::protocol::update_bproducer_operation, (root)(bobserver)(approve) )
+FC_REFLECT( sigmaengine::protocol::except_bobserver_operation, (root)(bobserver) )
 FC_REFLECT( sigmaengine::protocol::account_auth_operation, (account)(auth_type)(auth_token) )
 FC_REFLECT( sigmaengine::protocol::print_operation, (root)(account)(amount) )
 FC_REFLECT( sigmaengine::protocol::burn_operation, (root)(account)(amount) )

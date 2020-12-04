@@ -7,6 +7,8 @@ set( BLOCKCHAIN_NAME "SigmaEngine" )
 set( GUI_CLIENT_EXECUTABLE_NAME SigmaEngine )
 set( CUSTOM_URL_SCHEME "gcs" )
 set( INSTALLER_APP_ID "68ad7005-8eee-49c9-95ce-9eed97e5b347" )
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
 
 # http://stackoverflow.com/a/18369825
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
@@ -101,6 +103,11 @@ IF( WIN32 )
 ENDIF(WIN32)
 
 FIND_PACKAGE(Boost 1.58 REQUIRED COMPONENTS ${BOOST_COMPONENTS})
+
+if( NOT( Boost_VERSION LESS 106900 ) )
+   SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden")
+   SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fvisibility=hidden")
+endif()
 
 if( WIN32 )
 
@@ -201,6 +208,10 @@ set(ENABLE_COVERAGE_TESTING FALSE CACHE BOOL "Build SigmaEngine for code coverag
 if(ENABLE_COVERAGE_TESTING)
     SET(CMAKE_CXX_FLAGS "--coverage ${CMAKE_CXX_FLAGS}")
 endif()
+
+# fc/src/compress/miniz.c breaks strict aliasing. The Linux kernel builds with no strict aliasing
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-strict-aliasing -Werror -DBOOST_THREAD_DONT_PROVIDE_PROMISE_LAZY" )
+SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-strict-aliasing -Werror -DBOOST_THREAD_DONT_PROVIDE_PROMISE_LAZY" )
 
 # external_plugins needs to be compiled first because libraries/app depends on SIGMAENGINE_EXTERNAL_PLUGINS being fully populated
 add_subdirectory( libraries )

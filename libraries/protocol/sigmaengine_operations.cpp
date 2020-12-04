@@ -43,6 +43,12 @@ namespace sigmaengine { namespace protocol {
       FC_ASSERT( fc::is_utf8( memo ), "Memo is not UTF8" );
    } FC_CAPTURE_AND_RETHROW( (*this) ) }
 
+   void bobserver_update_operation::validate() const
+   {
+      validate_account_name( owner );
+      FC_ASSERT( url.size() > 0, "URL size must be greater than 0" );
+      FC_ASSERT( fc::is_utf8( url ), "URL is not valid UTF8" );
+   }
 
    void custom_operation::validate() const {
       /// required auth accounts are the ones whose bandwidth is consumed
@@ -118,6 +124,16 @@ namespace sigmaengine { namespace protocol {
          validate_account_name( current_reset_account );
       validate_account_name( reset_account );
       FC_ASSERT( current_reset_account != reset_account, "new reset account cannot be current reset account" );
+   }
+
+   void update_bproducer_operation::validate() const
+   {
+      validate_account_name( bobserver );
+   }
+
+   void except_bobserver_operation::validate() const
+   {
+      validate_account_name( bobserver );
    }
 
    void account_auth_operation::validate() const

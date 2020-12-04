@@ -24,6 +24,7 @@ target_link_libraries( cli_wallet PRIVATE
                           sigmaengine_dapp_history ${CMAKE_DL_LIBS} ${PLATFORM_SPECIFIC_LIBS} )
 else( SIGMAENGINE_STATIC_BUILD )
    target_link_libraries( cli_wallet PRIVATE
+                          Threads::Threads
                           sigmaengine_app graphene_net sigmaengine_chain sigmaengine_protocol graphene_utilities 
                           sigmaengine_wallet sigmaengine_app fc sigmaengine_token sigmaengine_dapp 
                           sigmaengine_dapp_history ${CMAKE_DL_LIBS} ${PLATFORM_SPECIFIC_LIBS} )

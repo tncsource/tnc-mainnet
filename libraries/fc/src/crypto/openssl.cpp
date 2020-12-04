@@ -8,6 +8,8 @@
 #include <string>
 #include <stdlib.h>
 
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace  fc 
 {
     struct openssl_scope

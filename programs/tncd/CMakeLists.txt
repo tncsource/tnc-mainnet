@@ -39,6 +39,7 @@ elseif( FULL_STATIC_BUILD ) # for windows version (mingw) : include libwinpthrea
   )   
 else( SIGMAENGINE_STATIC_BUILD )
    target_link_libraries( tncd PRIVATE
+      Threads::Threads
       sigmaengine_plugins
       sigmaengine_mf_plugins
       sigmaengine_app

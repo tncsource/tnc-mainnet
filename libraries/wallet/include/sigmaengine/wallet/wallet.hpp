@@ -485,6 +485,19 @@ class wallet_api
       optional< bobserver_api_obj > get_bobserver(string owner_account);
 
       /**
+       * Update a bobserver object owned by the given account.
+       *
+       * @param bobserver_name The name of the bobserver account.
+       * @param url A URL containing some information about the bobserver.  The empty string makes it remain the same.
+       * @param block_signing_key The new block signing public key.  The empty string disables block production.
+       * @param broadcast true if you wish to broadcast the transaction.
+       */
+      annotated_signed_transaction update_bobserver(string bobserver_name,
+                                        string url,
+                                        public_key_type block_signing_key,
+                                        bool broadcast = false);
+
+      /**
        * Transfer funds from one account to another. PIA can be transferred.
        *
        * @param from The account the funds are coming from
@@ -612,7 +625,25 @@ class wallet_api
       /**
        * Returns the decrypted memo if possible given wallet's known private keys
        */
-      string decrypt_memo( string memo );                 
+      string decrypt_memo( string memo );
+
+      /**
+       * appoitment block observer(BO) to block producer(BP)
+       * @param bobserver block observer
+       * @param approve if true, set BP, else unset
+       * @param broadcast true if you wish to broadcast the transaction
+       * */
+      annotated_signed_transaction update_bproducer( string bobserver,
+                                          bool approve = true,
+                                          bool broadcast = false);
+
+      /**
+       * except to block observer(BO)
+       * @param bobserver block observer
+       * @param broadcast true if you wish to broadcast the transaction
+       * */
+      annotated_signed_transaction except_bobserver( string bobserver,
+                                          bool broadcast = false);                   
 
       /**
        *  Post or update a comment(feed).
@@ -1202,6 +1233,10 @@ FC_API( sigmaengine::wallet::wallet_api,
         (push_transaction)
         (fill_transaction)
 
+        // block producer
+        (update_bproducer)
+        (update_bobserver)
+        (except_bobserver)
 
         (network_add_nodes)
         (network_get_connected_peers)

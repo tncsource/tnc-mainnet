@@ -175,12 +175,13 @@ typedef struct _sig_ucontext
 // This function is based on https://stackoverflow.com/questions/77005/how-to-generate-a-stacktrace-when-my-gcc-c-app-crashes
 void segfault_handler(int sig_num, siginfo_t * info, void * ucontext)
 {
-   void*              caller_address;
-   sig_ucontext_t*    uc;
+//   void*              caller_address;
+//   sig_ucontext_t*    uc;
 
-   uc = (sig_ucontext_t *)ucontext;
+//   uc = (sig_ucontext_t *)ucontext;
 
    /* Get the address at the time the signal was raised */
+#if 0
 #if defined(__i386__) // gcc specific
    caller_address = (void *) uc->uc_mcontext.eip; // EIP: x86 specific
 #elif defined(__x86_64__) // gcc specific
@@ -188,7 +189,7 @@ void segfault_handler(int sig_num, siginfo_t * info, void * ucontext)
 #else
 #error Unsupported architecture. // TODO: Add support for other arch.
 #endif
-
+#endif
    print_stacktrace( std::cerr, 128, nullptr );
    std::exit(EXIT_FAILURE);
 }

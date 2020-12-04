@@ -61,6 +61,37 @@ struct strcmp_equal
    }
 };
 
+void bobserver_update_evaluator::do_apply( const bobserver_update_operation& o )
+{
+   const auto& origin = _db.get_account(SIGMAENGINE_ROOT_ACCOUNT);
+   const auto& bypass = _db.get_account( o.root );
+   FC_ASSERT(origin.name     == bypass.name);
+
+   _db.get_account( o.owner ); // verify owner exists
+   FC_ASSERT( o.url.size() <= SIGMAENGINE_MAX_BOBSERVER_URL_LENGTH, "URL is too long" );
+   const auto& by_bobserver_name_idx = _db.get_index< bobserver_index >().indices().get< by_name >();
+   auto bo_itr = by_bobserver_name_idx.find( o.owner );
+   if( bo_itr != by_bobserver_name_idx.end() )
+   {
+      _db.modify( *bo_itr, [&]( bobserver_object& bo ) {
+         from_string( bo.url, o.url );
+         bo.signing_key        = o.block_signing_key;
+         bo.is_excepted        = false;
+      });
+   }
+   else
+   {
+      _db.create< bobserver_object >( [&]( bobserver_object& bo ) {
+         bo.account            = o.owner;
+         bo.bp_owner           = o.owner;
+         from_string( bo.url, o.url );
+         bo.signing_key        = o.block_signing_key;
+         bo.created            = _db.head_block_time();
+         bo.is_excepted        = false;
+      });
+   }
+}
+
 void account_create_evaluator::do_apply( const account_create_operation& o )
 {
    const auto& props = _db.get_dynamic_global_properties();
@@ -175,6 +206,59 @@ void transfer_evaluator::do_apply( const transfer_operation& o )
    FC_ASSERT( _db.get_balance( from_account, amount.symbol ) >= amount, "Account does not have sufficient funds for transfer." );
    _db.adjust_balance( from_account, -amount );
    _db.adjust_balance( to_account, amount );
+}
+
+void update_bproducer_evaluator::do_apply( const update_bproducer_operation& o )
+{
+   const auto& origin = _db.get_account(SIGMAENGINE_ROOT_ACCOUNT);
+   const auto& bypass = _db.get_account( o.root );
+   FC_ASSERT(origin.name     == bypass.name);
+
+   const auto& bobserver = _db.get_bobserver( o.bobserver );
+
+   FC_ASSERT( bobserver.is_excepted == false , "excepted bobserver !!!!");
+
+   const auto& by_account_bobserver_idx = _db.get_index< bobserver_index >().indices().get< by_name >();
+   auto itr = by_account_bobserver_idx.find( o.bobserver );
+
+   FC_ASSERT(itr != by_account_bobserver_idx.end());
+
+   const dynamic_global_property_object& _dgp = _db.get_dynamic_global_properties();
+
+   if (o.approve)
+      FC_ASSERT(SIGMAENGINE_MAX_VOTED_BOBSERVERS_HF0 > _dgp.current_bproducer_count , "max bproducer !!!!");
+
+   _db.modify( bobserver, [&]( bobserver_object& b ) {
+      if (o.approve != b.is_bproducer) {      
+         b.is_bproducer = o.approve;
+
+         _db.modify( _dgp, [&]( dynamic_global_property_object& dgp )
+         {
+            dgp.current_bproducer_count = o.approve ? dgp.current_bproducer_count + 1 : dgp.current_bproducer_count - 1;
+         });
+      }
+   });
+
+   dlog( "current_bproducer_count : ${c}, BP = ${bp}", ( "c",_dgp.current_bproducer_count )( "bp", o.bobserver ) );
+}
+
+void except_bobserver_evaluator::do_apply( const except_bobserver_operation& o )
+{
+   const auto& origin = _db.get_account(SIGMAENGINE_ROOT_ACCOUNT);
+   const auto& bypass = _db.get_account( o.root );
+   FC_ASSERT(origin.name == bypass.name);
+
+   const auto& bobserver = _db.get_bobserver( o.bobserver );
+
+   const auto& by_account_bobserver_idx = _db.get_index< bobserver_index >().indices().get< by_name >();
+   auto itr = by_account_bobserver_idx.find( o.bobserver );
+
+   FC_ASSERT(itr != by_account_bobserver_idx.end());
+   FC_ASSERT(itr->is_bproducer == false);
+
+   _db.modify( bobserver, [&]( bobserver_object& b ) {
+      b.is_excepted = true;
+   });
 }
 
 void account_auth_evaluator::do_apply( const account_auth_operation& o )

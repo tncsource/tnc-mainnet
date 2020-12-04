@@ -59,6 +59,11 @@ struct get_impacted_account_visitor
       _impacted.insert( op.creator );
    }
 
+   void operator()( const bobserver_update_operation& op )
+   {
+      _impacted.insert( op.owner );
+   }
+
    void operator()( const transfer_operation& op )
    {
       _impacted.insert( op.from );
@@ -84,6 +89,16 @@ struct get_impacted_account_visitor
    void operator()( const shutdown_bobserver_operation& op )
    {
       _impacted.insert( op.owner );
+   }
+
+   void operator()( const update_bproducer_operation& op )
+   {
+      _impacted.insert( op.bobserver );
+   }
+
+   void operator()( const except_bobserver_operation& op )
+   {
+      _impacted.insert( op.bobserver );
    }
 
    void operator()( const account_auth_operation& op )
