@@ -41,10 +41,11 @@ sudo apt-get install -y \
 ```
 
 ```
-git clone https://github.com/tnc/tnc
+git clone https://github.com/tncsource/tnc-mainnet
 git submodule update --init --recursive
 mkdir build
 cd build
+-> add chmod 777 build folder
 cmake -DCMAKE_BUILD_TYPE=Release ..
 make -j$(nproc) tncd
 make -j$(nproc) cli_wallet
