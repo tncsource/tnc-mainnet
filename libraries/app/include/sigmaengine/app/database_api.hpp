@@ -214,6 +214,7 @@ class database_api
       /// @brief Get a hexdump of the serialized binary form of a transaction
       std::string                   get_transaction_hex(const signed_transaction& trx)const;
       annotated_signed_transaction  get_transaction( transaction_id_type trx_id )const;
+      uint64_t get_transaction_count(uint32_t block)const;
 
       /**
        *  This API will take a partially signed transaction and a set of public keys that the owner has the ability to sign for
@@ -245,7 +246,11 @@ class database_api
        *  @param from - the absolute sequence number, -1 means most recent, limit is the number of operations before from.
        *  @param limit - the maximum number of items that can be queried (0 to 1000], must be less than from
        */
+       
+//      uint64_t get_account_transfer_history_count( string account,uint32_t type )const;
+      map< uint32_t, applied_operation > get_account_transfer_history( string account, uint64_t from, uint32_t limit )const     ;  
       map<uint32_t, applied_operation> get_account_history( string account, uint64_t from, uint32_t limit )const;
+      map< uint32_t, optional<signed_block_api_obj>> get_block_range(uint32_t block_num, uint16_t num)const;
 
       vector< operation > get_history_by_opname( string account, string op_name )const; 
 
@@ -260,6 +265,9 @@ class database_api
 
       map<uint32_t, applied_operation> get_operation_list( uint64_t from, uint32_t limit )const;
       map< uint32_t, account_balance_api_obj > get_balance_rank( uint64_t from, uint32_t limit )const;
+      asset get_total_supply() const;
+      asset get_dapp_transaction_fee() const;
+      uint32_t get_free_memory();
 
    private:
       std::shared_ptr< database_api_impl >   my;
@@ -331,4 +339,12 @@ FC_API(sigmaengine::app::database_api,
 
    (get_operation_list)
    (get_balance_rank)
+
+   (get_total_supply)
+   (get_dapp_transaction_fee)
+   (get_account_transfer_history)
+   (get_transaction_count)
+   (get_block_range)
+
+   (get_free_memory)
 )

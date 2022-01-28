@@ -37,7 +37,7 @@ namespace sigmaengine { namespace chain {
          time_point_sec    time;
          account_name_type current_bobserver;
 
-         asset             current_supply              = asset( 0, SGT_SYMBOL );   /// total pia supply
+         asset             current_supply              = asset( 0, SGT_SYMBOL );   /// total tnc supply
 
          /**
           *  Maximum block size is decided by the set of active bobservers which change every round.
@@ -70,6 +70,8 @@ namespace sigmaengine { namespace chain {
 
          time_point_sec    next_update_bproducer_owner_time;
          time_point_sec    last_dapp_voting_aggregation_time;
+
+         uint32_t          total_transfer = 0;
    };
 
    typedef multi_index_container<
@@ -94,9 +96,11 @@ FC_REFLECT( sigmaengine::chain::dynamic_global_property_object,
              (current_aslot)
              (recent_slots_filled)
              (participation_count)
+             (dapp_transaction_fee)
              (last_irreversible_block_num)
              (current_bproducer_count)
              (next_update_bproducer_owner_time)
              (last_dapp_voting_aggregation_time)
+             (total_transfer)
           )
 CHAINBASE_SET_INDEX_TYPE( sigmaengine::chain::dynamic_global_property_object, sigmaengine::chain::dynamic_global_property_index )

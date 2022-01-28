@@ -236,8 +236,8 @@ void update_bobserver_schedule4( database& db )
       _bso.majority_version = majority_version;
    } );
 
-   dlog( "BP : active = ${active}", ( "active", active_bobservers ) );
-   dlog( "BP : suffled_bp = ${suffled_bp}", ( "suffled_bp", bo_schedule_object.current_shuffled_bobservers ) );
+   dlog( "${b} BP : active = ${active}", ("b", db.head_block_num())( "active", active_bobservers ) );
+//   dlog( "BP : suffled_bp = ${suffled_bp}", ( "suffled_bp", bo_schedule_object.current_shuffled_bobservers ) );
 }
 
 

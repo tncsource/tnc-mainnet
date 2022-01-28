@@ -473,6 +473,15 @@ namespace sigmaengine { namespace protocol {
       void get_required_active_authorities( flat_set<account_name_type>& a )const{ a.insert( root ); }
    };
 
+   struct set_blacklist_account_operation : public base_operation
+   {
+      account_name_type root;
+      account_name_type account;
+      bool              banned;
+
+      void              validate()const;
+      void get_required_active_authorities( flat_set<account_name_type>& a )const{ a.insert( root ); }
+   };
    
 } } // sigmaengine::protocol
 
@@ -522,3 +531,5 @@ FC_REFLECT( sigmaengine::protocol::except_bobserver_operation, (root)(bobserver)
 FC_REFLECT( sigmaengine::protocol::account_auth_operation, (account)(auth_type)(auth_token) )
 FC_REFLECT( sigmaengine::protocol::print_operation, (root)(account)(amount) )
 FC_REFLECT( sigmaengine::protocol::burn_operation, (root)(account)(amount) )
+
+FC_REFLECT( sigmaengine::protocol::set_blacklist_account_operation, (root)(account)(banned) )

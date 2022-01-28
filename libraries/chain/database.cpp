@@ -116,7 +116,8 @@ void database::open( const fc::path& data_dir, const fc::path& shared_mem_dir, u
             undo_all();
             FC_ASSERT( revision() == head_block_num(), "Chainbase revision does not match head block num",
                ("rev", revision())("head_block", head_block_num()) );
-            validate_invariants();
+
+            // validate_invariants();
          });
 
          if( head_block_num() )
@@ -1174,6 +1175,7 @@ void database::initialize_evaluators()
    _my->_evaluator_registry.register_evaluator< transfer_fund_evaluator                      >();
    _my->_evaluator_registry.register_evaluator< set_fund_interest_evaluator                  >();
    _my->_evaluator_registry.register_evaluator< return_staking_fund_evaluator                >();
+   _my->_evaluator_registry.register_evaluator< set_blacklist_account_evaluator              >();
 }
 
 void database::set_custom_operation_interpreter( const std::string& id, std::shared_ptr< custom_operation_interpreter > registry )
@@ -2216,6 +2218,25 @@ const common_fund_object& database::get_common_fund( const string name ) const
 const dapp_reward_fund_object& database::get_dapp_reward_fund()const
 {
    return get(dapp_reward_fund_id_type());
+}
+
+void database::add_blacklist(const string account)
+{
+   ilog("add black-list : ${account}", ("account", account));
+   _black_list.push_back(account);
+}
+
+bool database::is_blacklist(const account_name_type account)
+{
+   for ( auto b : _black_list )
+   {
+      if ( b == account)
+      {
+         return true;
+      }
+   }
+
+   return false;
 }
 
 } } //sigmaengine::chain

@@ -88,10 +88,20 @@ struct operation_visitor
          if( hist_itr != hist_idx.end() && hist_itr->account == item )
             sequence = hist_itr->sequence + 1;
 
+
+         uint32_t op_seq = 0;
+         const auto& hiop_idx = _db.get_index<account_history_index>().indices().get<by_op_tag>();
+         auto hiop_itr = hiop_idx.lower_bound( boost::make_tuple( item, _note.op.which(), uint32_t(-1) ) );
+         if( hiop_itr != hiop_idx.end() && hiop_itr->account == item )
+            op_seq = hiop_itr->op_seq + 1;
+
          _db.create<account_history_object>( [&]( account_history_object& ahist )
          {
             ahist.account  = item;
             ahist.sequence = sequence;
+            ahist.op_tag = _note.op.which();
+            ahist.op_seq = op_seq;
+            
             ahist.op       = new_obj->id;
          });
    }

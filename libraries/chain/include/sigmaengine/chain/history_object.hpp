@@ -77,10 +77,14 @@ namespace sigmaengine { namespace chain {
 
          account_name_type account;
          uint32_t          sequence = 0;
+         uint32_t          op_tag = 0;
+         uint32_t          op_seq = 0;
+
          operation_id_type op;
    };
 
    struct by_account;
+   struct by_op_tag;
    typedef multi_index_container<
       account_history_object,
       indexed_by<
@@ -91,6 +95,14 @@ namespace sigmaengine { namespace chain {
                member< account_history_object, uint32_t, &account_history_object::sequence>
             >,
             composite_key_compare< std::less< account_name_type >, std::greater< uint32_t > >
+         >,
+         ordered_unique< tag< by_op_tag >,
+            composite_key< account_history_object,
+               member< account_history_object, account_name_type, &account_history_object::account>,
+               member< account_history_object, uint32_t, &account_history_object::op_tag>,
+               member< account_history_object, uint32_t, &account_history_object::op_seq>
+            >,
+            composite_key_compare< std::less< account_name_type >, std::greater< uint32_t >, std::greater< uint32_t > >
          >
       >,
       allocator< account_history_object >
@@ -100,5 +112,5 @@ namespace sigmaengine { namespace chain {
 FC_REFLECT( sigmaengine::chain::operation_object, (id)(trx_id)(block)(trx_in_block)(op_in_trx)(virtual_op)(timestamp)(serialized_op) )
 CHAINBASE_SET_INDEX_TYPE( sigmaengine::chain::operation_object, sigmaengine::chain::operation_index )
 
-FC_REFLECT( sigmaengine::chain::account_history_object, (id)(account)(sequence)(op) )
+FC_REFLECT( sigmaengine::chain::account_history_object, (id)(account)(sequence)(op_tag)(op_seq)(op) )
 CHAINBASE_SET_INDEX_TYPE( sigmaengine::chain::account_history_object, sigmaengine::chain::account_history_index )

@@ -52,7 +52,8 @@ namespace sigmaengine { namespace protocol {
             fill_staking_fund_operation,
             fill_transfer_savings_operation,
 
-            custom_json_dapp_operation
+            custom_json_dapp_operation,
+            set_blacklist_account_operation
             
          > operation;
 

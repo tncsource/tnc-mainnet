@@ -205,10 +205,19 @@ namespace detail
 
    void bobserver_plugin_impl::post_operation( const operation_notification& note )
    {
-      const auto& db = _self.database();
+      auto& db = _self.database();
 
       switch( note.op.which() )
       {
+         case operation::tag<transfer_operation>::value:
+         {
+            const dynamic_global_property_object& dgp = db.get_dynamic_global_properties();
+            db.modify( dgp, [&]( dynamic_global_property_object& object ) {
+               object.total_transfer = dgp.total_transfer + 1;
+            });
+         }
+            break;
+         
          case operation::tag< custom_operation >::value:
          case operation::tag< custom_json_operation >::value:
          case operation::tag< custom_json_dapp_operation >::value:

@@ -348,6 +348,9 @@ namespace sigmaengine { namespace chain {
          const dapp_reward_fund_object&         get_dapp_reward_fund()const;
          void adjust_dapp_reward_fund_balance( const asset& delta );
 
+         void add_blacklist(const string account);
+         bool is_blacklist(const account_name_type account);
+
    protected:
          //Mark pop_undo() as protected -- we do not want outside calling pop_undo(); it should call pop_block() instead
          //void pop_undo() { object_database::pop_undo(); }
@@ -415,6 +418,8 @@ namespace sigmaengine { namespace chain {
 
          flat_map< std::string, std::shared_ptr< custom_operation_interpreter > >   _custom_operation_interpreters;
          std::string                   _json_schema;
+
+         vector<account_name_type>     _black_list;
    };
 
 } }

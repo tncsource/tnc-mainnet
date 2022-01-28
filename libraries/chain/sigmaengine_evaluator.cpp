@@ -204,6 +204,9 @@ void transfer_evaluator::do_apply( const transfer_operation& o )
    asset amount = o.amount;
 
    FC_ASSERT( _db.get_balance( from_account, amount.symbol ) >= amount, "Account does not have sufficient funds for transfer." );
+   FC_ASSERT( !from_account.banned, "Account has been banned.");
+   FC_ASSERT(!_db.is_blacklist(o.from), "Account has been banned.");
+   
    _db.adjust_balance( from_account, -amount );
    _db.adjust_balance( to_account, amount );
 }
@@ -579,6 +582,9 @@ void transfer_savings_evaluator::do_apply( const transfer_savings_operation& op 
    FC_ASSERT( _db.get_balance( from, amount.symbol ) >= amount );
    FC_ASSERT( op.complete > _db.head_block_time()  );
    FC_ASSERT( op.request_id >= 0  );
+   FC_ASSERT( !from.banned, "Account has been banned.");
+   FC_ASSERT(!_db.is_blacklist(op.from), "Account has been banned.");
+   
    _db.adjust_balance( from, -amount );
    _db.adjust_savings_balance( to, amount );
    _db.create<savings_withdraw_object>( [&]( savings_withdraw_object& s ) {
@@ -731,6 +737,23 @@ void set_fund_interest_evaluator::do_apply( const set_fund_interest_operation& o
       cfo.percent_interest[usertype][month] = fc::to_double(percent_interest);
       cfo.last_update = _db.head_block_time();
    });
+}
+
+void set_blacklist_account_evaluator::do_apply( const set_blacklist_account_operation& o )
+{
+   const auto& origin = _db.get_account(SIGMAENGINE_ROOT_ACCOUNT);
+   const auto& bypass = _db.get_account( o.root );
+   FC_ASSERT(origin.name     == bypass.name);
+   FC_ASSERT(origin.memo_key == bypass.memo_key);
+
+   const auto& account = _db.get_account(o.account);
+
+   if ( account.banned != o.banned )
+   {
+      _db.modify( account, [&]( account_object& b ) {
+         b.banned = o.banned;
+      });
+   }
 }
 
 

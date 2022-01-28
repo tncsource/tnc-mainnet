@@ -45,6 +45,8 @@ namespace sigmaengine { namespace chain {
          asset             balance = asset( 0, SGT_SYMBOL );  
          asset             savings_balance = asset( 0, SGT_SYMBOL );
 
+         bool              banned = false;
+
          uint32_t          post_count = 0;
 
          time_point_sec    last_post;
@@ -271,6 +273,7 @@ FC_REFLECT( sigmaengine::chain::account_object,
              (recovery_account)(last_account_recovery)(reset_account)
              (balance)
              (savings_balance)
+             (banned)
              (post_count)
              (last_post)(last_root_post)
           )

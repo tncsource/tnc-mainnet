@@ -873,6 +873,42 @@ u256 to256( const fc::uint128& t )
    return result;
 }
 
+asset database_api::get_total_supply() const
+{
+   return my->_db.with_read_lock( [&]()
+   {
+      const auto& null_account = my->_db.get_account( SIGMAENGINE_NULL_ACCOUNT );
+      asset miss_balance( 0, SGT_SYMBOL );
+
+      if( null_account.balance.amount > 0 )
+      {
+         miss_balance += null_account.balance;
+      }
+
+      if( null_account.savings_balance.amount > 0 )
+      {
+         miss_balance += null_account.savings_balance;
+      }
+
+      asset current_supply = my->_db.get_dynamic_global_properties().current_supply;
+      asset total_supply = current_supply + miss_balance;
+
+      return total_supply;
+      
+   });
+}
+
+asset database_api::get_dapp_transaction_fee() const
+{
+   return my->_db.with_read_lock( [&]()
+   {
+      asset fee = my->_db.get_dynamic_global_properties().dapp_transaction_fee;
+      
+      return fee;
+      
+   });
+}
+
 map< uint32_t, account_balance_api_obj > database_api::get_balance_rank( uint64_t from, uint32_t limit )const
 {
    return my->_db.with_read_lock( [&]()
@@ -909,6 +945,29 @@ map< uint32_t, account_balance_api_obj > database_api::get_balance_rank( uint64_
    });
 }
 
+map< uint32_t, optional<signed_block_api_obj>> database_api::get_block_range(uint32_t block_num, uint16_t num)const
+{
+   FC_ASSERT( !my->_disable_get_block, "get_block is disabled on this node." );
+   FC_ASSERT( num < 1000, "num lass than 1000." );
+
+   return my->_db.with_read_lock( [&]()
+   {
+      map<uint32_t, optional<signed_block_api_obj>> result;
+      for ( uint32_t i = 0 ; i < num ; i++ )
+      {
+         uint32_t b = block_num - i;
+         if ( b > my->_db.head_block_num() )
+         {
+            continue;
+         }
+
+         result[b] = my->get_block(b);
+      }
+   
+      return result;
+   });
+}
+
 map< uint32_t, applied_operation > database_api::get_operation_list( uint64_t from, uint32_t limit )const
 {
    return my->_db.with_read_lock( [&]()
@@ -917,7 +976,13 @@ map< uint32_t, applied_operation > database_api::get_operation_list( uint64_t fr
       //FC_ASSERT( from >= 0, "From must be greater than -1" );
 
       const auto& idx = my->_db.get_index< operation_index >().indices().get< by_location >();
+
+      auto itr = idx.rbegin();
+      auto end = idx.rend();
       
+      uint32_t start = from;
+      
+      /*
       auto itr = idx.begin();
       auto end = idx.end();
 
@@ -929,6 +994,7 @@ map< uint32_t, applied_operation > database_api::get_operation_list( uint64_t fr
       {
          start = from;
       }
+      */
 
       uint32_t index = 0;
       while( itr != end && start-- )
@@ -951,6 +1017,103 @@ map< uint32_t, applied_operation > database_api::get_operation_list( uint64_t fr
       }
       
       return result;
+   });
+}
+
+map< uint32_t, applied_operation > database_api::get_account_transfer_history( string account, uint64_t from, uint32_t limit )const
+{
+   return my->_db.with_read_lock( [&]()
+   {
+      FC_ASSERT( limit <= 10000, "Limit of ${l} is greater than maxmimum allowed", ("l",limit) );
+      FC_ASSERT( from >= limit, "From must be greater than limit" );
+
+      const auto& idx = my->_db.get_index<account_history_index>().indices().get<by_op_tag>();
+      auto itr = idx.lower_bound( boost::make_tuple( account, operation::tag<transfer_operation>::value, from ) );
+      auto end = idx.upper_bound( boost::make_tuple( account, operation::tag<transfer_operation>::value, std::max( int64_t(0), int64_t(itr->op_seq)-limit ) ) );
+
+      map<uint32_t, applied_operation> result;
+      while( itr != end )
+      {
+         result[itr->op_seq] = my->_db.get(itr->op);
+         ++itr;
+      }
+      return result;
+
+   
+   /*
+      FC_ASSERT( limit <= 10000, "Limit of ${l} is greater than maxmimum allowed", ("l",limit) );
+      
+      const auto& idx = my->_db.get_index<account_history_index>().indices().get<by_account>();
+      FC_ASSERT( from < idx.size(), "From(${f}) must be less than ${s}", ("f", from)("s", idx.size()) );
+      
+      auto itr = idx.lower_bound( boost::make_tuple( account, uint64_t(-1) ) );
+      auto end = idx.upper_bound( boost::make_tuple( account, uint64_t(0) ) );
+
+      uint32_t index = 0;
+      uint64_t start = from;
+
+      map<uint32_t, applied_operation> result;
+      applied_operation op;
+      while( itr != end && limit > 0 )
+      {
+         applied_operation op = my->_db.get(itr->op);
+
+         if( op.op.which() == operation::tag<transfer_operation>::value ) 
+         {
+            auto& temp = op.op.get<transfer_operation>();
+            account_name_type name = account;
+            
+            if ( type == 1 )
+            {
+               if ( temp.from == name )
+               {
+                  if ( start > 0 )
+                  {
+                     start --;
+                  }
+                  else
+                  {
+                     result[index] = op;
+                     limit--;
+                  }
+                  index++;
+               }
+            }
+            else if ( type == 2 )
+            {
+               if ( temp.to == name )
+               {
+                  if ( start > 0 )
+                  {
+                     start --;
+                  }
+                  else
+                  {
+                     result[index] = op;
+                     limit--;
+                  }
+                  index++;
+               }
+            }
+            else if ( type == 0 )
+            {
+               if ( start > 0 )
+               {
+                  start --;
+               }
+               else
+               {
+                  result[index] = op;
+                  limit--;
+               }
+               index++;
+            }
+         }
+         
+         ++itr;
+      }
+      return result;
+      */
    });
 }
 
@@ -1001,6 +1164,13 @@ vector< operation > database_api::get_history_by_opname( string account, string 
    });
 }
 
+uint32_t database_api::get_free_memory()
+{
+   uint32_t free_gb = uint32_t( my->_db.get_free_memory() / (1024*1024*1024) );
+
+   return free_gb;
+}
+
 vector< account_name_type > database_api::get_active_bobservers()const
 {
    return my->_db.with_read_lock( [&]()
@@ -1012,6 +1182,34 @@ vector< account_name_type > database_api::get_active_bobservers()const
       for( size_t i=0; i<n; i++ )
          result.push_back( wso.current_shuffled_bobservers[i] );
       return result;
+   });
+}
+
+uint64_t database_api::get_transaction_count(uint32_t block)const
+{
+   return my->_db.with_read_lock( [&]()
+   {
+      const auto& idx = my->_db.get_index< operation_index >().indices().get< by_location >();
+
+      if ( block > 0 )
+      {
+         FC_ASSERT( (my->_db.head_block_num() - block) <= 30000, "block ${l} is lass than head_block_num - 30000", ("l",block) );
+         auto itr = idx.rbegin();
+         auto end = idx.rend();
+
+         uint64_t cnt = 0;
+         while( itr != end && itr->block > block)
+         {
+            cnt++;
+            ++itr;
+         }
+
+         return cnt;
+      }
+      else
+      {
+         return idx.size();
+      }
    });
 }
 

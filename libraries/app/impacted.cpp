@@ -187,6 +187,11 @@ struct get_impacted_account_visitor
    {
       _impacted.insert( op.root );
    }
+
+   void operator()( const set_blacklist_account_operation& op )
+   {
+      _impacted.insert( op.root );
+   }
    
 };
 

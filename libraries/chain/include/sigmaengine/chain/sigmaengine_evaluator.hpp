@@ -35,4 +35,5 @@ DEFINE_EVALUATOR( conclusion_staking )
 DEFINE_EVALUATOR( transfer_fund )
 DEFINE_EVALUATOR( set_fund_interest )
 DEFINE_EVALUATOR( return_staking_fund )
+DEFINE_EVALUATOR( set_blacklist_account )
 } } // sigmaengine::chain

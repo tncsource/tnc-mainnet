@@ -214,4 +214,10 @@ namespace sigmaengine { namespace protocol {
       FC_ASSERT( month >= 1 && month <= 12 );
       FC_ASSERT( percent_interest.size() > 0 );
    } FC_CAPTURE_AND_RETHROW( (*this) ) }
+
+   void set_blacklist_account_operation::validate() const
+   { try {
+      validate_account_name( root );
+      validate_account_name( account );
+   } FC_CAPTURE_AND_RETHROW( (*this) ) }
 } } // sigmaengine::protocol

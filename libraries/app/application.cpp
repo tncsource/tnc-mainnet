@@ -299,6 +299,15 @@ namespace detail {
             }
             _chain_db->add_checkpoints( loaded_checkpoints );
 
+            if ( _options->count("black-list") )
+            {
+               auto bls = _options->at("black-list").as<vector<string>>();
+               for ( auto b : bls )
+               {
+                  _chain_db->add_blacklist(b);
+               }
+            }
+
             if( _options->count("replay-blockchain") )
             {
                ilog("Replaying blockchain on user request.");
@@ -993,6 +1002,7 @@ void application::set_program_options(boost::program_options::options_descriptio
          ("max-block-age", bpo::value< int32_t >()->default_value(200), "Maximum age of head block when broadcasting tx via API")
          ("flush", bpo::value< uint32_t >()->default_value(100000), "Flush shared memory file to disk this many blocks")
          ("backtrace", bpo::value<string>()->default_value("yes"), "Whether to print backtrace on SIGSEGV")
+         ("black-list", bpo::value<vector<string>>()->composing(), "black-list account")
          ;
    command_line_options.add(configuration_file_options);
    command_line_options.add_options()

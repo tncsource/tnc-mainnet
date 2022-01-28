@@ -199,6 +199,7 @@ class wallet_api
        * Returns transaction by ID.
        */
       annotated_signed_transaction      get_transaction( transaction_id_type trx_id )const;
+      uint64_t                          get_transaction_count( uint32_t block )const ;
 
       /** Checks whether the wallet has just been created and has not yet had a password set.
        *
@@ -600,11 +601,17 @@ class wallet_api
        *  @param limit - the maximum number of items that can be queried (0 to 1000], must be less than from
        */
       map<uint32_t,applied_operation> get_account_history( string account, uint32_t from, uint32_t limit );
+//      uint64_t get_account_transfer_history_count( string account, uint32_t type );
+      map<uint32_t,applied_operation> get_account_transfer_history( string account, uint32_t from, uint32_t limit );
       
       vector< operation > get_history_by_opname( string account, string op_name )const; 
 
       map<uint32_t,applied_operation> get_operation_list( uint32_t from, uint32_t limit );
       map<uint32_t,account_balance_api_obj> get_balance_rank( uint32_t from, uint32_t limit );
+      map< uint32_t, optional<signed_block_api_obj>> get_block_range(uint32_t block_num, uint16_t num);
+
+      asset get_dapp_transaction_fee();
+      asset get_total_supply();
 
       std::map<string,std::function<string(fc::variant,const fc::variants&)>> get_result_formatters() const;
 
@@ -785,6 +792,14 @@ class wallet_api
        * @param broadcast true if you wish to broadcast the transaction
        * */
       annotated_signed_transaction transfer_token_fund( string from, string token, string fund_name, asset amount, string memo, bool broadcast );
+
+      /**
+       * set banned account.
+       * @param account account
+       * @param banned banned
+       * @param broadcast true if you wish to broadcast the transaction
+       * */
+      annotated_signed_transaction set_blacklist_account(string account, bool banned, bool broadcast );
 
       /**
        * staking token fund.
@@ -1149,6 +1164,9 @@ class wallet_api
 
       annotated_signed_transaction return_staking_fund(string fund_name, uint32_t request_id, string to, bool broadcast );
       annotated_signed_transaction set_fund_interest(string fund_name, uint8_t usertype, uint8_t month, string percent_interest, bool broadcast );
+
+
+      uint32_t get_free_memory();
 };
 
 struct plain_keys {
@@ -1313,5 +1331,14 @@ FC_API( sigmaengine::wallet::wallet_api,
         
         ( get_operation_list )
         ( get_balance_rank )
+
+        ( get_total_supply )
+        ( get_dapp_transaction_fee )
+        ( get_account_transfer_history )
+        ( get_transaction_count )
+        ( get_block_range )
+        ( get_free_memory )
+
+        ( set_blacklist_account )
       )
 FC_REFLECT( sigmaengine::wallet::memo_data, (from)(to)(nonce)(check)(encrypted) )
